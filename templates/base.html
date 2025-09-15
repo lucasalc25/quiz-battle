@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <script>
+    (function () {
+      const saved = localStorage.getItem("theme");
+      const preferred = saved ? saved : "dark";
+      document.documentElement.setAttribute("data-theme", preferred);
+    })();
+  </script>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="turbo-cache-control" content="no-preview" />
+
+    <title>{{ title or "Quiz Battle" }}</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='styles.css') }}"
+    />
+    <script src="https://unpkg.com/@hotwired/turbo@8.0.4/dist/turbo.es2017-umd.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+  </head>
+  <body class="{{ body_class or '' }}" data-page="{{ body_class or '' }}">
+    <header id="header">
+      <div class="theme-toggle" aria-label="Alternar tema">
+        <span class="theme-label">☀️</span>
+        <input id="themeChk" type="checkbox" aria-label="tema escuro" />
+        <label for="themeChk" class="theme-switch"></label>
+        <span class="theme-label">🌙</span>
+      </div>
+
+      <!-- Botão de mute/unmute -->
+      <button
+        id="muteBtn"
+        class="mute-btn"
+        aria-label="Alternar som"
+        data-turbo-permanent
+      >
+        <i data-lucide="volume-x"></i>
+      </button>
+    </header>
+
+    <audio id="bgMusic" autoplay loop muted data-turbo-permanent>
+      <source id="bgSource" src="" type="audio/mpeg" data-current="" />
+    </audio>
+
+    <main class="container">{% block content %}{% endblock %}</main>
+
+    <script>
+      (function () {
+        // ==== chaves de storage ====
+        const KEY_TRACK = "bg_track"; // "home" | "game"
+        const KEY_POS = "bg_pos"; // segundos
+        const KEY_MUTED = "muted"; // "1" | "0"
+
+        // ==== helpers ====
+        function ensureElements() {
+          // garante que botão, audio e source existem; cria se necessário
+          let btn = document.getElementById("muteBtn");
+          let audio = document.getElementById("bgMusic");
+          let source = document.getElementById("bgSource");
+
+          if (!audio) {
+            audio = document.createElement("audio");
+            audio.id = "bgMusic";
+            audio.autoplay = true;
+            audio.loop = true;
+            audio.muted = true;
+            audio.setAttribute("data-turbo-permanent", "");
+            source = document.createElement("source");
+            source.id = "bgSource";
+            source.type = "audio/mpeg";
+            source.setAttribute("data-current", "");
+            audio.appendChild(source);
+            document.body.prepend(audio);
+          }
+          if (!source) {
+            source = document.createElement("source");
+            source.id = "bgSource";
+            source.type = "audio/mpeg";
+            source.setAttribute("data-current", "");
+            audio.appendChild(source);
+          }
+          if (!btn) {
+            btn = document.createElement("button");
+            btn.id = "muteBtn";
+            btn.className = "mute-btn";
+            btn.setAttribute("aria-label", "Alternar som");
+            btn.setAttribute("data-turbo-permanent", "");
+            btn.textContent = "🔇";
+            document.body.prepend(btn);
+          }
+          return { btn, audio, source };
+        }
+
+        function urlFor(track) {
+          // ajuste os caminhos conforme seus arquivos reais
+          if (track === "home")
+            return "{{ url_for('static', filename='audio/home.mp3') }}";
+          return "{{ url_for('static', filename='audio/game.mp3') }}";
+        }
+
+        function pageKind() {
+          return document.body.dataset.page || ""; // "home" | "game" | "rank" | "end"
+        }
+
+        function setIcon(btn, audio) {
+          if (!btn) return;
+          if (window.lucide) {
+            btn.innerHTML = audio.muted
+              ? '<i data-lucide="volume-x"></i>'
+              : '<i data-lucide="volume-2"></i>';
+            try {
+              lucide.createIcons();
+            } catch (_) {}
+          } else {
+            btn.textContent = audio.muted ? "🔇" : "🔊";
+          }
+        }
+
+        // ==== inicialização única (para eventos persistentes) ====
+        if (!window.__bgAudioInit) {
+          const { btn, audio, source } = ensureElements();
+
+          // estado de mute inicial (padrão: silenciado)
+          const savedMute = localStorage.getItem(KEY_MUTED);
+          audio.muted = savedMute === "1" || savedMute === null;
+          setIcon(btn, audio);
+
+          // botão mute → alterna e persiste
+          if (!btn.dataset.bound) {
+            btn.addEventListener("click", () => {
+              audio.muted = !audio.muted;
+              localStorage.setItem(KEY_MUTED, audio.muted ? "1" : "0");
+              if (!audio.muted) audio.play().catch(() => {});
+              setIcon(btn, audio);
+            });
+            btn.dataset.bound = "1";
+          }
+
+          // salvar posição periodicamente
+          let saveTimer = null;
+          function savePos() {
+            try {
+              localStorage.setItem(KEY_POS, String(audio.currentTime || 0));
+              localStorage.setItem(
+                KEY_TRACK,
+                source.getAttribute("data-current") || "home"
+              );
+            } catch (_) {}
+          }
+          audio.addEventListener("play", () => {
+            if (saveTimer) clearInterval(saveTimer);
+            saveTimer = setInterval(savePos, 800);
+          });
+          audio.addEventListener("pause", () => {
+            if (saveTimer) clearInterval(saveTimer);
+            savePos();
+          });
+          window.addEventListener("pagehide", savePos);
+          window.addEventListener("beforeunload", savePos);
+
+          // desbloqueio de autoplay: 1º clique global
+          document.addEventListener(
+            "click",
+            () => {
+              if (!audio.muted && audio.paused) audio.play().catch(() => {});
+            },
+            { once: true }
+          );
+
+          window.__bgAudioInit = true;
+        }
+
+        // ==== handler de cada “página” (Turbo) ====
+        function onLoadPage() {
+          // evita rodar durante preview
+          if (document.documentElement.hasAttribute("data-turbo-preview"))
+            return;
+
+          const { audio, source, btn } = ensureElements();
+
+          const bodyPage = pageKind();
+          const lastTrack = localStorage.getItem(KEY_TRACK) || "home";
+
+          // Regra:
+          // - home → "home"
+          // - game → "game"
+          // - rank/end → herdam a última ("home" ou "game")
+          let wanted;
+          if (bodyPage === "home") wanted = "home";
+          else if (bodyPage === "game") wanted = "game";
+          else wanted = lastTrack || "home";
+
+          const currentTrack = source.getAttribute("data-current") || "";
+          const wantedTrack = wanted;
+
+          // Trilha já correta? Não troque (evita qualquer micro-pausa)
+          if (currentTrack === wantedTrack) {
+            if (!audio.muted && audio.paused) audio.play().catch(() => {});
+            setIcon(btn, audio);
+            return;
+          }
+
+          // Troca de trilha: define src e, se herdou, tenta retomar posição
+          const savedPos = parseFloat(localStorage.getItem(KEY_POS) || "0");
+          const canResume = lastTrack === wantedTrack && savedPos > 0.2;
+
+          source.src = urlFor(wantedTrack);
+          source.setAttribute("data-current", wantedTrack);
+          audio.load();
+
+          audio.addEventListener(
+            "loadedmetadata",
+            () => {
+              if (canResume && savedPos < (audio.duration || Infinity)) {
+                try {
+                  audio.currentTime = savedPos;
+                } catch (_) {}
+              }
+              if (!audio.muted) audio.play().catch(() => {});
+            },
+            { once: true }
+          );
+
+          setIcon(btn, audio);
+        }
+
+        // eventos Turbo
+        document.addEventListener("turbo:load", onLoadPage);
+        if (
+          document.readyState === "complete" ||
+          document.readyState === "interactive"
+        ) {
+          setTimeout(onLoadPage, 0);
+        }
+      })();
+
+      (function () {
+        const chk = document.getElementById("themeChk");
+        const current =
+          document.documentElement.getAttribute("data-theme") || "dark";
+        // marca o switch conforme o tema atual
+        chk.checked = current === "dark";
+
+        chk.addEventListener("change", () => {
+          const next = chk.checked ? "dark" : "light";
+          document.documentElement.setAttribute("data-theme", next);
+          localStorage.setItem("theme", next);
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,27 @@
+# Ambiente virtual
+.venv/
+env/
+venv/
+
+# Arquivos de cache do Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+
+# Banco de dados local (não precisa subir pro GitHub nem pro Render)
+*.db
+*.sqlite3
+
+# Configurações locais / segredos
+*.env
+.env.local
+
+# Logs
+*.log
+
+# IDEs
+.vscode/
+.idea/
+

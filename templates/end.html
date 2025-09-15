@@ -3,12 +3,10 @@
   {% if perfect %}Perfeito! Você acertou todas!{% elif score==0 %}Não foi dessa
   vez!{% else %}Você acertou {{ score }}/10{% endif %}
 </h2>
-{% if perfect %}<img
-  src="{{ url_for('static', filename='medal.png') }}"
-  class="medal"
-/>{% endif %}
+{% if perfect %}<img src="../static/images/medal.png" class="medal" />{% endif
+%}
 <p class="buttons">
-  <a href="/" class="button">Jogar novamente</a>
-  <a href="/leaderboard" class="button">Ranking</a>
+  <a href="./" class="button">Jogar novamente</a>
+  <a href="./leaderboard" class="button">Ranking</a>
 </p>
 {% endblock %}

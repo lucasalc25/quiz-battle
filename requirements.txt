@@ -1,5 +1,5 @@
-flask
 jinja2
-sqlalchemy>=2.0
-psycopg[binary]
-gunicorn
+Flask==3.0.3
+SQLAlchemy==2.0.32
+psycopg[binary]==3.2.1
+gunicorn==22.0.0

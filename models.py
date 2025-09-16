@@ -7,14 +7,18 @@ import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///quiz.db")
 
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        poolclass=NullPool 
-    )
+# Render/Postgres virá como postgres://...  (às vezes sem o +psycopg)
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
 
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+is_sqlite = DATABASE_URL.startswith("sqlite")
+
+engine = create_engine(
+    DATABASE_URL,
+    future=True,
+    connect_args={"check_same_thread": False} if is_sqlite else {}
+)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 
 THEMES = ('Esportes','TV/Cinema','Jogos','Música','Lógica','História','Diversos')

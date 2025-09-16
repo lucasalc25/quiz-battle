@@ -14,8 +14,7 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
     poolclass=NullPool,
 )
-
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 
 THEMES = ('Esportes','TV/Cinema','Jogos','Música','Lógica','História','Diversos')

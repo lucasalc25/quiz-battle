@@ -16,7 +16,18 @@
     <link rel="stylesheet" href="../static/styles.css" />
     <script src="https://unpkg.com/@hotwired/turbo@8.0.4/dist/turbo.es2017-umd.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <link
+      rel="preload"
+      as="audio"
+      href="{{ url_for('static', filename='audio/home.mp3') }}"
+    />
+    <link
+      rel="preload"
+      as="audio"
+      href="{{ url_for('static', filename='audio/game.mp3') }}"
+    />
   </head>
+
   <body class="{{ body_class or '' }}" data-page="{{ body_class or '' }}">
     <header id="header">
       <div class="theme-toggle" aria-label="Alternar tema">
@@ -35,11 +46,11 @@
       >
         <i data-lucide="volume-x"></i>
       </button>
-    </header>
 
-    <audio id="bgMusic" autoplay loop muted data-turbo-permanent>
-      <source id="bgSource" src="" type="audio/mpeg" data-current="" />
-    </audio>
+      <audio id="bgMusic" autoplay loop muted data-turbo-permanent>
+        <source id="bgSource" src="" type="audio/mpeg" data-current="" />
+      </audio>
+    </header>
 
     <main class="container">{% block content %}{% endblock %}</main>
 

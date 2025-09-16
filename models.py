@@ -5,16 +5,32 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import NullPool
 import os
 
-SQLITE_URL = "sqlite:////opt/render/project/src/quiz.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-DB_URL = SQLITE_URL
+if not DATABASE_URL:
+    # fallback local
+    DATABASE_URL = "sqlite:///quiz.db"
 
-engine = create_engine(
-    DB_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=NullPool,
-)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+def make_engine(url: str):
+    if url.startswith("sqlite"):
+        # Ambiente local simples
+        return create_engine(
+            url,
+            connect_args={"check_same_thread": False}
+        )
+    else:
+        # Postgres (Neon)
+        return create_engine(
+            url,
+            pool_pre_ping=True,
+            pool_size=3,
+            max_overflow=2,
+            pool_timeout=30,
+            pool_recycle=1800, 
+        )
+
+engine = make_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
 THEMES = ('Esportes','TV/Cinema','Jogos','Música','Lógica','História','Diversos')

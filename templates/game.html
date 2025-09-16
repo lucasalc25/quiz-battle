@@ -150,6 +150,8 @@
 
       // === áudio de tick ===
       const tickAudio = document.getElementById("tickSound");
+      const isMute = localStorage.getItem("muted");
+
       function playTick() {
         if (!tickAudio) return;
         try {
@@ -177,7 +179,7 @@
         void display.offsetWidth;
         display.classList.add("swap");
 
-        playTick();
+        if (isMute == 0) playTick();
 
         // desacelera suavemente
         if (ticks > total * 0.66) delay += 40;

@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import NullPool
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///quiz.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg://user:pass@host/db")
 
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(

@@ -37,7 +37,7 @@
       </button>
     </header>
 
-    <audio id="bgMusic" autoplay loop muted data-turbo-permanent>
+    <audio id="bgMusic" autoplay loop muted preload="auto" data-turbo-permanent>
       <source id="bgSource" src="" type="audio/mpeg" data-current="" />
     </audio>
 
@@ -49,46 +49,6 @@
         const KEY_TRACK = "bg_track"; // "home" | "game"
         const KEY_POS = "bg_pos"; // segundos
         const KEY_MUTED = "muted"; // "1" | "0"
-
-        // ==== helpers ====
-        function ensureElements() {
-          // garante que botão, audio e source existem; cria se necessário
-          let btn = document.getElementById("muteBtn");
-          let audio = document.getElementById("bgMusic");
-          let source = document.getElementById("bgSource");
-
-          if (!audio) {
-            audio = document.createElement("audio");
-            audio.id = "bgMusic";
-            audio.autoplay = true;
-            audio.loop = true;
-            audio.muted = true;
-            audio.setAttribute("data-turbo-permanent", "");
-            source = document.createElement("source");
-            source.id = "bgSource";
-            source.type = "audio/mpeg";
-            source.setAttribute("data-current", "");
-            audio.appendChild(source);
-            document.body.prepend(audio);
-          }
-          if (!source) {
-            source = document.createElement("source");
-            source.id = "bgSource";
-            source.type = "audio/mpeg";
-            source.setAttribute("data-current", "");
-            audio.appendChild(source);
-          }
-          if (!btn) {
-            btn = document.createElement("button");
-            btn.id = "muteBtn";
-            btn.className = "mute-btn";
-            btn.setAttribute("aria-label", "Alternar som");
-            btn.setAttribute("data-turbo-permanent", "");
-            btn.textContent = "🔇";
-            document.body.prepend(btn);
-          }
-          return { btn, audio, source };
-        }
 
         function urlFor(track) {
           // ajuste os caminhos conforme seus arquivos reais
@@ -171,56 +131,51 @@
 
         // ==== handler de cada “página” (Turbo) ====
         function onLoadPage() {
-          // evita rodar durante preview
           if (document.documentElement.hasAttribute("data-turbo-preview"))
             return;
 
           const { audio, source, btn } = ensureElements();
 
-          const bodyPage = pageKind();
-          const lastTrack = localStorage.getItem(KEY_TRACK) || "home";
+          // Regra de trilha: home -> "home", game -> "game", rank/end -> mantém última
+          const kind = pageKind();
+          const lastUrl = source.getAttribute("src") || ""; // URL atual
+          const lastTrack = lastUrl.includes("/audio/game.mp3")
+            ? "game"
+            : lastUrl.includes("/audio/home.mp3")
+            ? "home"
+            : ""; // desconhecido (primeiro load)
 
-          // Regra:
-          // - home → "home"
-          // - game → "game"
-          // - rank/end → herdam a última ("home" ou "game")
-          let wanted;
-          if (bodyPage === "home") wanted = "home";
-          else if (bodyPage === "game") wanted = "game";
-          else wanted = lastTrack || "home";
+          const wantedTrack =
+            kind === "home"
+              ? "home"
+              : kind === "game"
+              ? "game"
+              : lastTrack || "home";
 
-          const currentTrack = source.getAttribute("data-current") || "";
-          const wantedTrack = wanted;
+          const wantedUrl = urlFor(wantedTrack);
 
-          // Trilha já correta? Não troque (evita qualquer micro-pausa)
-          if (currentTrack === wantedTrack) {
+          // Já estamos na trilha desejada? NÃO mexe em src/load (evita restart)
+          // Use includes porque source.src vira URL absoluta
+          if (
+            lastUrl &&
+            audio.querySelector("source").src.includes(wantedUrl)
+          ) {
             if (!audio.muted && audio.paused) audio.play().catch(() => {});
             setIcon(btn, audio);
             return;
           }
 
-          // Troca de trilha: define src e, se herdou, tenta retomar posição
-          const savedPos = parseFloat(localStorage.getItem(KEY_POS) || "0");
-          const canResume = lastTrack === wantedTrack && savedPos > 0.2;
-
-          source.src = urlFor(wantedTrack);
-          source.setAttribute("data-current", wantedTrack);
+          // Primeira definição ou troca real (home <-> game): agora sim troca src e load()
+          source.setAttribute("src", wantedUrl);
           audio.load();
-
           audio.addEventListener(
             "loadedmetadata",
             () => {
-              if (canResume && savedPos < (audio.duration || Infinity)) {
-                try {
-                  audio.currentTime = savedPos;
-                } catch (_) {}
-              }
               if (!audio.muted) audio.play().catch(() => {});
+              setIcon(btn, audio);
             },
             { once: true }
           );
-
-          setIcon(btn, audio);
         }
 
         // eventos Turbo

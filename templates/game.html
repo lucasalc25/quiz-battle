@@ -1,5 +1,11 @@
 {% extends "base.html" %}{% block content %}
 
+<audio
+  id="tickSound"
+  src="{{ url_for('static', filename='audio/tick.mp3') }}"
+  preload="auto"
+></audio>
+
 <!-- Dados para a roleta em JSON puro -->
 <script type="application/json" id="themesJSON">
   {{ (themes | default([])) | tojson }}
@@ -7,8 +13,6 @@
 <script type="application/json" id="finalThemeJSON">
   {{ (theme  | default("") ) | tojson }}
 </script>
-
-<audio id="tickSound" src="../static/audio/tick.mp3" preload="auto"></audio>
 
 <!-- ROLETA -->
 {% if show_roulette %}
@@ -30,18 +34,19 @@
       <strong id="timer">15</strong>
     </div>
 
-    {% if q.image_url %}<img src="{{ q.image_url }}" class="img" />{% endif %}
+    {% if q.image_url %} {% set imgsrc = q.image_url %}
+    <img
+      src="{{ imgsrc if imgsrc.startswith('http') else url_for('static', filename=images) }}"
+      alt="Imagem da pergunta"
+      loading="lazy"
+      decoding="async"
+      class="img"
+    />{% endif %}
     <h2>{{ q.statement }}</h2>
 
     {% if not feedback %}
     <!-- MODO PERGUNTA -->
-    <form
-      id="qform"
-      method="post"
-      action="/answer"
-      class="options"
-      data-turbo="false"
-    >
+    <form id="qform" method="post" action="/answer" class="options">
       <input type="hidden" name="qid" value="{{ q.id }}" />
       <input type="hidden" name="correct" value="{{ q.correct }}" />
       <input type="hidden" name="picked" id="pickedHidden" />
@@ -85,12 +90,7 @@
       <h3>❌ Resposta incorreta</h3>
       {% endif %}
 
-      <form
-        class="feedback-form"
-        method="post"
-        action="/continue"
-        data-turbo="false"
-      >
+      <form class="feedback-form" method="post" action="/continue">
         {% if was_correct %}
         <input type="hidden" name="last" value="correct" />
         {% else %}
@@ -227,16 +227,13 @@
       const form = document.getElementById("qform");
       const hidden = document.getElementById("pickedHidden");
       const buttons = document.querySelectorAll(".opt");
-      let submitting = false;
 
       window.pickAndSubmit = function (letter) {
         if (!hidden || !form) return false;
         hidden.value = letter;
-        if (submitting) return false;
-        submitting = true;
-        hidden.value = letter;
         buttons.forEach((b) => (b.disabled = true));
-        form.requestSubmit ? form.requestSubmit() : form.submit();
+        if (form.requestSubmit) form.requestSubmit();
+        else form.submit();
         return false;
       };
 

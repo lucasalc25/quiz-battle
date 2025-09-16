@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import NullPool
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg://user:pass@host/db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///quiz.db")
 
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
@@ -13,10 +13,6 @@ if DATABASE_URL.startswith("sqlite"):
         connect_args={"check_same_thread": False},
         poolclass=NullPool 
     )
-else:
-    # Postgres/Neon
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()

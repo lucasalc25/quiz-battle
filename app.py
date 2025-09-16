@@ -14,8 +14,21 @@ THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "
 
 def db_session():
     db = SessionLocal()
-    try: yield db
-    finally: db.close()
+    try:
+        yield db
+        db.commit()
+    except:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+def db_readonly():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 def _load_ranking(db):
     return db.execute(
@@ -40,11 +53,11 @@ def start():
     if not nickname:
         return redirect(url_for("home"))
 
-    db = next(db_session())
-    user = db.get(User, nickname)
-    if not user:
-        user = User(nickname=nickname)
-        db.add(user); db.commit()
+    with db_session() as db:
+        user = db.get(User, nickname)
+        if not user:
+            user = User(nickname=nickname)
+            db.add(user); db.commit()
 
     theme = random.choice(THEMES)
 
@@ -68,56 +81,56 @@ def game():
         show_roulette = True
         session["roulette_shown"] = True
 
-    db = next(db_session())
+    with db_session() as db:
 
-    # ----- MODO FEEDBACK (após POST/redirect) -----
-    if request.args.get("fb") == "1":
-        fb = session.get("feedback_state")
-        if fb:
-            q = db.get(Question, fb["qid"])
-            score = len(asked_ids)
-            # opcional: limpar para evitar reexibir em refresh
-            session.pop("feedback_state", None)
+        # ----- MODO FEEDBACK (após POST/redirect) -----
+        if request.args.get("fb") == "1":
+            fb = session.get("feedback_state")
+            if fb:
+                q = db.get(Question, fb["qid"])
+                score = len(asked_ids)
+                # opcional: limpar para evitar reexibir em refresh
+                session.pop("feedback_state", None)
 
-            return render_template(
-                "game.html",
-                q=q,
-                theme=theme,
-                score=score,
-                feedback=True,
-                was_correct=fb["was_correct"],
-                timed_out=fb["timed_out"],
-                picked=fb["picked"],
-                correct=fb["correct"],
-                themes=THEMES,
-                show_roulette=False,
-                body_class="game",
-                title="Jogo"
-            )
-        # se não houver fb na sessão, cai pro fluxo normal
+                return render_template(
+                    "game.html",
+                    q=q,
+                    theme=theme,
+                    score=score,
+                    feedback=True,
+                    was_correct=fb["was_correct"],
+                    timed_out=fb["timed_out"],
+                    picked=fb["picked"],
+                    correct=fb["correct"],
+                    themes=THEMES,
+                    show_roulette=False,
+                    body_class="game",
+                    title="Jogo"
+                )
+            # se não houver fb na sessão, cai pro fluxo normal
 
-    # ----- MODO PERGUNTA NORMAL -----
-    q = db.execute(
-        select(Question)
-        .where(Question.theme == theme)
-        .where(~Question.id.in_(asked_ids) if asked_ids else True)
-        .order_by(func.random())
-        .limit(1)
-    ).scalar_one_or_none()
-    if not q:
-        return redirect(url_for("end", reason="completou"))
+        # ----- MODO PERGUNTA NORMAL -----
+        q = db.execute(
+            select(Question)
+            .where(Question.theme == theme)
+            .where(~Question.id.in_(asked_ids) if asked_ids else True)
+            .order_by(func.random())
+            .limit(1)
+        ).scalar_one_or_none()
+        if not q:
+            return redirect(url_for("end", reason="completou"))
 
-    return render_template(
-        "game.html",
-        q=q,
-        theme=theme,
-        score=len(asked_ids),
-        feedback=False,
-        themes=THEMES,
-        show_roulette=show_roulette,
-        body_class="game",
-        title="Jogo"
-    )
+        return render_template(
+            "game.html",
+            q=q,
+            theme=theme,
+            score=len(asked_ids),
+            feedback=False,
+            themes=THEMES,
+            show_roulette=show_roulette,
+            body_class="game",
+            title="Jogo"
+        )
 
 @app.post("/answer")
 def answer():
@@ -125,28 +138,28 @@ def answer():
     correct = (request.form.get("correct") or "").upper()
     qid     = int(request.form.get("qid"))
 
-    db = next(db_session())
-    q  = db.get(Question, qid)
+    with db_session() as db:
+        q  = db.get(Question, qid)
 
-    asked = session.get("asked_ids") or []
-    timed_out  = (picked == "TIMEOUT")
-    was_correct = (picked == correct) and not timed_out
+        asked = session.get("asked_ids") or []
+        timed_out  = (picked == "TIMEOUT")
+        was_correct = (picked == correct) and not timed_out
 
-    if was_correct and (qid not in asked):
-        asked.append(qid)
-        session["asked_ids"] = asked
+        if was_correct and (qid not in asked):
+            asked.append(qid)
+            session["asked_ids"] = asked
 
-    # guarda feedback na sessão (para a próxima GET)
-    session["feedback_state"] = {
-        "qid": qid,
-        "was_correct": was_correct,
-        "timed_out": timed_out,
-        "picked": picked if picked in ["A","B","C","D"] else None,
-        "correct": correct,
-    }
+        # guarda feedback na sessão (para a próxima GET)
+        session["feedback_state"] = {
+            "qid": qid,
+            "was_correct": was_correct,
+            "timed_out": timed_out,
+            "picked": picked if picked in ["A","B","C","D"] else None,
+            "correct": correct,
+        }
 
-    # Turbo exige redirect após POST
-    return redirect(url_for("game", fb=1))
+        # Turbo exige redirect após POST
+        return redirect(url_for("game", fb=1))
 
 
 @app.post("/continue")
@@ -169,84 +182,84 @@ def end():
     if not nickname:
         return redirect(url_for("home"))
 
-    db = next(db_session())
+    with db_session() as db:
 
-    # --- estado ANTES ---
-    rows_before = _load_ranking(db)
-    existed     = any(r.nickname == nickname for r in rows_before)
-    old_pos     = _find_position(rows_before, nickname)
+        # --- estado ANTES ---
+        rows_before = _load_ranking(db)
+        existed     = any(r.nickname == nickname for r in rows_before)
+        old_pos     = _find_position(rows_before, nickname)
 
-    # Upsert só com score > 0
-    if score > 0:
-        db.execute(text("""
-            INSERT INTO leaderboard (nickname, best_score)
-            VALUES (:nick, :score)
-            ON CONFLICT(nickname) DO UPDATE SET
-              best_score = CASE
-                WHEN excluded.best_score > leaderboard.best_score
-                THEN excluded.best_score
-                ELSE leaderboard.best_score
-              END
-        """), {"nick": nickname, "score": score})
+        # Upsert só com score > 0
+        if score > 0:
+            db.execute(text("""
+                INSERT INTO leaderboard (nickname, best_score)
+                VALUES (:nick, :score)
+                ON CONFLICT(nickname) DO UPDATE SET
+                best_score = CASE
+                    WHEN excluded.best_score > leaderboard.best_score
+                    THEN excluded.best_score
+                    ELSE leaderboard.best_score
+                END
+            """), {"nick": nickname, "score": score})
 
-        # medalha opcional (ajuste o limiar)
-        if score >= 30:
-            u = db.get(User, nickname)
-            if u:
-                u.has_perfect_medal = True
+            # medalha opcional (ajuste o limiar)
+            if score >= 30:
+                u = db.get(User, nickname)
+                if u:
+                    u.has_perfect_medal = True
 
-        db.commit()
+            db.commit()
 
-    # 0 acertos → tela padrão
-    if score == 0:
+        # 0 acertos → tela padrão
+        if score == 0:
+            return render_template("end.html",
+                                score=score,
+                                perfect=False,
+                                reason=reason,
+                                title="Fim da partida",
+                                body_class="end")
+
+        # --- estado DEPOIS ---
+        rows_after = _load_ranking(db)
+        new_pos    = _find_position(rows_after, nickname)
+
+        # 1) Primeira vez no ranking
+        if not existed:
+            return render_template("leaderboard.html",
+                                rows=rows_after[:30],
+                                just_added=nickname,
+                                body_class="rank",
+                                title="Ranking",)
+
+        # 2) mostra promoção se SUBIU posição
+        moved_up = (old_pos is not None and new_pos is not None and new_pos < old_pos)
+        if moved_up:
+            return render_template("leaderboard.html",
+                                rows=rows_after[:30],
+                                promoted_nick=nickname,
+                                positions_up=(old_pos - new_pos),
+                                new_rank=new_pos,
+                                body_class="rank",
+                                title="Ranking")
+
+        # 3) Sem mudança de posição
         return render_template("end.html",
-                               score=score,
-                               perfect=False,
-                               reason=reason,
-                               title="Fim da partida",
-                               body_class="end")
-
-    # --- estado DEPOIS ---
-    rows_after = _load_ranking(db)
-    new_pos    = _find_position(rows_after, nickname)
-
-    # 1) Primeira vez no ranking
-    if not existed:
-        return render_template("leaderboard.html",
-                               rows=rows_after[:30],
-                               just_added=nickname,
-                               body_class="rank",
-                               title="Ranking",)
-
-    # 2) mostra promoção se SUBIU posição
-    moved_up = (old_pos is not None and new_pos is not None and new_pos < old_pos)
-    if moved_up:
-        return render_template("leaderboard.html",
-                               rows=rows_after[:30],
-                               promoted_nick=nickname,
-                               positions_up=(old_pos - new_pos),
-                               new_rank=new_pos,
-                               body_class="rank",
-                               title="Ranking")
-
-    # 3) Sem mudança de posição
-    return render_template("end.html",
-                           score=score,
-                           perfect=(score >= 30),
-                           reason=reason,
-                           title="Fim da partida",
-                           body_class="end")
+                            score=score,
+                            perfect=(score >= 30),
+                            reason=reason,
+                            title="Fim da partida",
+                            body_class="end")
 
 
 
 @app.get("/leaderboard")
 def leaderboard():
-    db = next(db_session())
-    rows = db.execute(
-        select(Leaderboard).order_by(Leaderboard.best_score.desc(), Leaderboard.nickname.asc()).limit(20)
-    ).scalars().all()
-    
-    return render_template("leaderboard.html", rows=rows, body_class="rank", title="Ranking")
+    with db_readonly() as db:
+        rows = db.execute(
+            select(Leaderboard).order_by(Leaderboard.best_score.desc(), Leaderboard.nickname.asc()).limit(20)
+        ).scalars().all()
+        
+        return render_template("leaderboard.html", rows=rows, body_class="rank", title="Ranking")
 
 
 if __name__ == "__main__":

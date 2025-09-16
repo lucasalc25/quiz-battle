@@ -45,22 +45,22 @@
 
     <script>
       (function () {
-        // ==== chaves de storage ====
-        const KEY_TRACK = "bg_track"; // "home" | "game"
-        const KEY_POS = "bg_pos"; // segundos
-        const KEY_MUTED = "muted"; // "1" | "0"
-
-        function urlFor(track) {
-          // ajuste os caminhos conforme seus arquivos reais
-          if (track === "home")
-            return "{{ url_for('static', filename='audio/home.mp3') }}";
-          return "{{ url_for('static', filename='audio/game.mp3') }}";
-        }
+        const KEY_MUTED = "muted";
 
         function pageKind() {
           return document.body.dataset.page || ""; // "home" | "game" | "rank" | "end"
         }
-
+        function urlFor(track) {
+          return track === "home"
+            ? "{{ url_for('static', filename='audio/home.mp3') }}"
+            : "{{ url_for('static', filename='audio/game.mp3') }}";
+        }
+        function ensureElements() {
+          const btn = document.getElementById("muteBtn");
+          const audio = document.getElementById("bgMusic");
+          const source = document.getElementById("bgSource");
+          return { btn, audio, source };
+        }
         function setIcon(btn, audio) {
           if (!btn) return;
           if (window.lucide) {
@@ -75,16 +75,13 @@
           }
         }
 
-        // ==== inicialização única (para eventos persistentes) ====
-        if (!window.__bgAudioInit) {
-          const { btn, audio, source } = ensureElements();
-
-          // estado de mute inicial (padrão: silenciado)
+        // init único
+        if (!window.__bgInit) {
+          const { btn, audio } = ensureElements();
           const savedMute = localStorage.getItem(KEY_MUTED);
-          audio.muted = savedMute === "1" || savedMute === null;
+          audio.muted = savedMute === "1" || savedMute === null; // começa mudo por padrão
           setIcon(btn, audio);
 
-          // botão mute → alterna e persiste
           if (!btn.dataset.bound) {
             btn.addEventListener("click", () => {
               audio.muted = !audio.muted;
@@ -95,29 +92,7 @@
             btn.dataset.bound = "1";
           }
 
-          // salvar posição periodicamente
-          let saveTimer = null;
-          function savePos() {
-            try {
-              localStorage.setItem(KEY_POS, String(audio.currentTime || 0));
-              localStorage.setItem(
-                KEY_TRACK,
-                source.getAttribute("data-current") || "home"
-              );
-            } catch (_) {}
-          }
-          audio.addEventListener("play", () => {
-            if (saveTimer) clearInterval(saveTimer);
-            saveTimer = setInterval(savePos, 800);
-          });
-          audio.addEventListener("pause", () => {
-            if (saveTimer) clearInterval(saveTimer);
-            savePos();
-          });
-          window.addEventListener("pagehide", savePos);
-          window.addEventListener("beforeunload", savePos);
-
-          // desbloqueio de autoplay: 1º clique global
+          // desbloqueia autoplay no primeiro clique
           document.addEventListener(
             "click",
             () => {
@@ -126,10 +101,9 @@
             { once: true }
           );
 
-          window.__bgAudioInit = true;
+          window.__bgInit = true;
         }
 
-        // ==== handler de cada “página” (Turbo) ====
         function onLoadPage() {
           if (document.documentElement.hasAttribute("data-turbo-preview"))
             return;
@@ -178,7 +152,6 @@
           );
         }
 
-        // eventos Turbo
         document.addEventListener("turbo:load", onLoadPage);
         if (
           document.readyState === "complete" ||

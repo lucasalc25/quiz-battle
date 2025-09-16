@@ -8,11 +8,7 @@
   {{ (theme  | default("") ) | tojson }}
 </script>
 
-<audio
-  id="tickSound"
-  src="{{ url_for('static', filename='audio/tick.mp3') }}"
-  preload="auto"
-></audio>
+<audio id="tickSound" src="../static/audio/tick.mp3" preload="auto"></audio>
 
 <!-- ROLETA -->
 {% if show_roulette %}
@@ -39,7 +35,13 @@
 
     {% if not feedback %}
     <!-- MODO PERGUNTA -->
-    <form id="qform" method="post" action="/answer" class="options">
+    <form
+      id="qform"
+      method="post"
+      action="/answer"
+      class="options"
+      data-turbo="false"
+    >
       <input type="hidden" name="qid" value="{{ q.id }}" />
       <input type="hidden" name="correct" value="{{ q.correct }}" />
       <input type="hidden" name="picked" id="pickedHidden" />
@@ -83,7 +85,12 @@
       <h3>❌ Resposta incorreta</h3>
       {% endif %}
 
-      <form class="feedback-form" method="post" action="/continue">
+      <form
+        class="feedback-form"
+        method="post"
+        action="/continue"
+        data-turbo="false"
+      >
         {% if was_correct %}
         <input type="hidden" name="last" value="correct" />
         {% else %}
@@ -220,13 +227,16 @@
       const form = document.getElementById("qform");
       const hidden = document.getElementById("pickedHidden");
       const buttons = document.querySelectorAll(".opt");
+      let submitting = false;
 
       window.pickAndSubmit = function (letter) {
         if (!hidden || !form) return false;
         hidden.value = letter;
+        if (submitting) return false;
+        submitting = true;
+        hidden.value = letter;
         buttons.forEach((b) => (b.disabled = true));
-        if (form.requestSubmit) form.requestSubmit();
-        else form.submit();
+        form.requestSubmit ? form.requestSubmit() : form.submit();
         return false;
       };
 

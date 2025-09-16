@@ -171,6 +171,7 @@ p {
 
 #game-content {
   opacity: 0;
+  text-align: center;
   transform: translateY(6px);
   transition: opacity 0.35s ease, transform 0.35s ease;
 }
@@ -292,10 +293,11 @@ a.button {
 }
 
 .img {
-  width: 80vw;
+  width: 100%;
   height: auto;
   border-radius: 12px;
-  margin: 0.5rem auto;
+  margin: 1rem auto;
+  padding: 0.5rem;
 }
 
 .medal {

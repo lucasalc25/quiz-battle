@@ -5,15 +5,14 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import NullPool
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///quiz.db")
+SQLITE_URL = "sqlite:////opt/render/project/src/quiz.db"
 
-is_sqlite = DATABASE_URL.startswith("sqlite")
+DB_URL = SQLITE_URL
 
 engine = create_engine(
-    DATABASE_URL,
-    echo=False,
-    future=True,
-    connect_args={"check_same_thread": False} if is_sqlite else {}
+    DB_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=NullPool,
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)

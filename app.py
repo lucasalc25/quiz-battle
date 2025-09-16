@@ -3,6 +3,7 @@ import random, os
 from flask import Flask, render_template, request, redirect, url_for, session
 from sqlalchemy import select, func, text
 from models import SessionLocal, User, Question, Leaderboard, THEMES, Base, engine
+from contextlib import contextmanager
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "troque-esta-chave")
@@ -12,23 +13,28 @@ Base.metadata.create_all(engine)
 
 THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "Diversos"]
 
+@contextmanager
 def db_session():
     db = SessionLocal()
     try:
         yield db
+        # se a rota for somente leitura, pode remover o commit automático
         db.commit()
     except:
         db.rollback()
         raise
     finally:
         db.close()
+        
 
+@contextmanager
 def db_readonly():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
 
 def _load_ranking(db):
     return db.execute(

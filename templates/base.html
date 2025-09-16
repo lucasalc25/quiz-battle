@@ -37,15 +37,7 @@
       </button>
     </header>
 
-    <audio
-      id="bgMusic"
-      autoplay
-      loop
-      muted
-      preload="auto"
-      playsinline
-      data-turbo-permanent
-    >
+    <audio id="bgMusic" autoplay loop muted data-turbo-permanent>
       <source id="bgSource" src="" type="audio/mpeg" data-current="" />
     </audio>
 
@@ -53,157 +45,155 @@
 
     <script>
       (function () {
-        const KEY_MUTED = "muted";
+        // ==== chaves de storage ====
+        const KEY_TRACK = "bg_track"; // "home" | "game"
+        const KEY_POS = "bg_pos"; // segundos
+        const KEY_MUTED = "muted"; // "1" | "0"
+
+        // ==== helpers ====
+        function ensureElements() {
+          // garante que botão, audio e source existem; cria se necessário
+          let btn = document.getElementById("muteBtn");
+          let audio = document.getElementById("bgMusic");
+          let source = document.getElementById("bgSource");
+
+          return { btn, audio, source };
+        }
+
+        function urlFor(track) {
+          // ajuste os caminhos conforme seus arquivos reais
+          if (track === "home")
+            return "{{ url_for('static', filename='audio/home.mp3') }}";
+          return "{{ url_for('static', filename='audio/game.mp3') }}";
+        }
 
         function pageKind() {
           return document.body.dataset.page || ""; // "home" | "game" | "rank" | "end"
         }
 
-        function urlFor(track) {
-          return track === "home"
-            ? "{{ url_for('static', filename='audio/home.mp3') }}"
-            : "{{ url_for('static', filename='audio/game.mp3') }}";
-        }
-
-        function ensureElements() {
-          const btn = document.getElementById("muteBtn");
-          const audio = document.getElementById("bgMusic");
-          const source = document.getElementById("bgSource");
-          return { btn, audio, source };
-        }
-
-        async function resumeAudio(reason = "") {
-          const { audio } = ensureElements();
-          if (!audio || audio.muted) return;
-
-          // tente algumas vezes com pequenos atrasos (caso o DOM ainda esteja estabilizando)
-          for (let i = 0; i < 3; i++) {
+        function setIcon(btn, audio) {
+          if (!btn) return;
+          if (window.lucide) {
+            btn.innerHTML = audio.muted
+              ? '<i data-lucide="volume-x"></i>'
+              : '<i data-lucide="volume-2"></i>';
             try {
-              if (audio.paused) {
-                // uma pequena espera ajuda após o turbo:load
-                await new Promise((r) => setTimeout(r, i === 0 ? 0 : 120));
-                await audio.play();
-              }
-              break; // sucesso
-            } catch (e) {
-              // se bloqueou, tenta no próximo loop
-            }
+              lucide.createIcons();
+            } catch (_) {}
+          } else {
+            btn.textContent = audio.muted ? "🔇" : "🔊";
           }
         }
 
-        // === inicialização única (você já tem algo parecido) ===
-        if (!window.__bgInit2) {
-          const { btn, audio } = ensureElements();
+        // ==== inicialização única (para eventos persistentes) ====
+        if (!window.__bgAudioInit) {
+          const { btn, audio, source } = ensureElements();
 
-          // começa mutado (política de autoplay)
-          const savedMute = localStorage.getItem("muted");
+          // estado de mute inicial (padrão: silenciado)
+          const savedMute = localStorage.getItem(KEY_MUTED);
           audio.muted = savedMute === "1" || savedMute === null;
+          setIcon(btn, audio);
 
-          // clique no botão = gesto de usuário → depois disso o play() tende a ser liberado
-          if (!btn.dataset.bound2) {
-            btn.addEventListener("click", async () => {
-              const wasMuted = audio.muted;
+          // botão mute → alterna e persiste
+          if (!btn.dataset.bound) {
+            btn.addEventListener("click", () => {
               audio.muted = !audio.muted;
-              localStorage.setItem("muted", audio.muted ? "1" : "0");
-              if (wasMuted && !audio.muted) {
-                // gesto de usuário: já tenta tocar agora
-                try {
-                  await audio.play();
-                } catch (_) {}
-              }
+              localStorage.setItem(KEY_MUTED, audio.muted ? "1" : "0");
+              if (!audio.muted) audio.play().catch(() => {});
+              setIcon(btn, audio);
             });
-            btn.dataset.bound2 = "1";
+            btn.dataset.bound = "1";
           }
 
-          // 1º clique em qualquer lugar também destrava
+          // salvar posição periodicamente
+          let saveTimer = null;
+          function savePos() {
+            try {
+              localStorage.setItem(KEY_POS, String(audio.currentTime || 0));
+              localStorage.setItem(
+                KEY_TRACK,
+                source.getAttribute("data-current") || "home"
+              );
+            } catch (_) {}
+          }
+          audio.addEventListener("play", () => {
+            if (saveTimer) clearInterval(saveTimer);
+            saveTimer = setInterval(savePos, 800);
+          });
+          audio.addEventListener("pause", () => {
+            if (saveTimer) clearInterval(saveTimer);
+            savePos();
+          });
+          window.addEventListener("pagehide", savePos);
+          window.addEventListener("beforeunload", savePos);
+
+          // desbloqueio de autoplay: 1º clique global
           document.addEventListener(
-            "pointerdown",
-            () => resumeAudio("pointerdown"),
+            "click",
+            () => {
+              if (!audio.muted && audio.paused) audio.play().catch(() => {});
+            },
             { once: true }
           );
 
-          // === eventos amarrados a navegação/visibilidade ===
-          // Clique que inicia a navegação Turbo (tem gesto de usuário)
-          document.addEventListener("turbo:click", () => {
-            // tenta manter tocando durante a transição
-            resumeAudio("turbo:click");
-          });
-
-          // Antes de visitar (ainda dentro do gesto)
-          document.addEventListener("turbo:before-visit", () => {
-            resumeAudio("turbo:before-visit");
-          });
-
-          // Ao carregar a nova página
-          document.addEventListener("turbo:load", () => {
-            // tenta já no mesmo frame…
-            resumeAudio("turbo:load");
-            // …e mais uma vez no próximo frame, caso o DOM ainda esteja assentando
-            requestAnimationFrame(() => resumeAudio("raf-after-load"));
-          });
-
-          // Quando a aba volta a ficar visível
-          document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible") {
-              resumeAudio("visibilitychange");
-            }
-          });
-
-          // Navegação do histórico / page show (Safari/iOS)
-          window.addEventListener("pageshow", () => {
-            resumeAudio("pageshow");
-          });
-
-          window.__bgInit2 = true;
+          window.__bgAudioInit = true;
         }
 
+        // ==== handler de cada “página” (Turbo) ====
         function onLoadPage() {
+          // evita rodar durante preview
           if (document.documentElement.hasAttribute("data-turbo-preview"))
             return;
 
           const { audio, source, btn } = ensureElements();
 
-          // Decide trilha desejada
-          const kind = pageKind();
-          const lastUrl = source.getAttribute("src") || ""; // URL *relativa* que você setou
-          const lastTrack = lastUrl.includes("/audio/game.mp3")
-            ? "game"
-            : lastUrl.includes("/audio/home.mp3")
-            ? "home"
-            : ""; // primeiro load
+          const bodyPage = pageKind();
+          const lastTrack = localStorage.getItem(KEY_TRACK) || "home";
 
-          const wantedTrack =
-            kind === "home"
-              ? "home"
-              : kind === "game"
-              ? "game"
-              : lastTrack || "home";
+          // Regra:
+          // - home → "home"
+          // - game → "game"
+          // - rank/end → herdam a última ("home" ou "game")
+          let wanted;
+          if (bodyPage === "home") wanted = "home";
+          else if (bodyPage === "game") wanted = "game";
+          else wanted = lastTrack || "home";
 
-          const wantedUrl = urlFor(wantedTrack);
+          const currentTrack = source.getAttribute("data-current") || "";
+          const wantedTrack = wanted;
 
-          // Já estamos na trilha desejada? NÃO mexe no src nem dá load()
-          // Use includes no "src absoluto" do <source> para comparar com a URL gerada
-          const absoluteSrc = source.src || "";
-          if (absoluteSrc && absoluteSrc.includes(wantedUrl)) {
-            if (!audio.muted && audio.paused) resumeAudio("same-track");
+          // Trilha já correta? Não troque (evita qualquer micro-pausa)
+          if (currentTrack === wantedTrack) {
+            if (!audio.muted && audio.paused) audio.play().catch(() => {});
             setIcon(btn, audio);
             return;
           }
 
-          // Primeira definição ou troca real (home <-> game)
-          source.setAttribute("src", wantedUrl);
+          // Troca de trilha: define src e, se herdou, tenta retomar posição
+          const savedPos = parseFloat(localStorage.getItem(KEY_POS) || "0");
+          const canResume = lastTrack === wantedTrack && savedPos > 0.2;
+
+          source.src = urlFor(wantedTrack);
+          source.setAttribute("data-current", wantedTrack);
           audio.load();
+
           audio.addEventListener(
             "loadedmetadata",
             () => {
-              resumeAudio("changed-track");
-              setIcon(btn, audio);
+              if (canResume && savedPos < (audio.duration || Infinity)) {
+                try {
+                  audio.currentTime = savedPos;
+                } catch (_) {}
+              }
+              if (!audio.muted) audio.play().catch(() => {});
             },
             { once: true }
           );
+
+          setIcon(btn, audio);
         }
 
-        // listeners
+        // eventos Turbo
         document.addEventListener("turbo:load", onLoadPage);
         if (
           document.readyState === "complete" ||

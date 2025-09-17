@@ -1,9 +1,37 @@
 # app.py
 import random, os
 from flask import Flask, render_template, request, redirect, url_for, session
-from sqlalchemy import select, func, text
+from sqlalchemy import select, text
 from models import SessionLocal, User, Question, Leaderboard, THEMES, Base, engine
 from contextlib import contextmanager
+from models import Meta
+from zoneinfo import ZoneInfo
+from datetime import datetime, time, timedelta
+
+TZ = ZoneInfo("America/Manaus")
+
+def next_monday_midnight(dt: datetime | None = None) -> datetime:
+    now = dt or datetime.now(TZ)
+    days_ahead = (7 - now.weekday()) % 7
+    # se já é segunda depois da meia-noite, vai para a próxima segunda
+    if days_ahead == 0 and now.time() >= time(0, 0):
+        days_ahead = 7
+    target_date = (now + timedelta(days=days_ahead)).date()
+    return datetime.combine(target_date, time(0, 0), tzinfo=TZ)
+
+def _maybe_reset_week(db):
+    now = datetime.now(TZ)
+    iso_year, iso_week, _ = now.isocalendar()
+    cur = f"{iso_year}-W{iso_week:02d}"
+
+    meta = db.get(Meta, "last_reset_week")
+    if not meta or meta.value != cur:
+        db.execute(text("DELETE FROM leaderboard"))
+        if meta:
+            meta.value = cur
+        else:
+            db.add(Meta(key="last_reset_week", value=cur))
+
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "troque-esta-chave")
@@ -198,6 +226,8 @@ def end():
         return redirect(url_for("home"))
 
     with db_session() as db:
+        _maybe_reset_week(db)
+        
         rows_before = _load_ranking(db)
         existed     = any(r.nickname == nickname for r in rows_before)
         old_pos     = _find_position(rows_before, nickname)
@@ -249,13 +279,25 @@ def end():
 
 @app.get("/leaderboard")
 def leaderboard():
-    with db_readonly() as db:
-        rows = db.execute(
-            select(Leaderboard).order_by(Leaderboard.best_score.desc(), Leaderboard.nickname.asc()).limit(20)
-        ).scalars().all()
-        
-    return render_template("leaderboard.html", rows=rows, body_class="rank", title="Ranking")
+    with db_session() as db:
+        _maybe_reset_week(db)
 
+        rows = db.execute(
+            select(Leaderboard)
+            .order_by(Leaderboard.best_score.desc(), Leaderboard.nickname.asc())
+            .limit(20)
+        ).scalars().all()
+
+    deadline = next_monday_midnight()
+    deadline_ms = int(deadline.timestamp() * 1000)
+
+    return render_template(
+        "leaderboard.html",
+        rows=rows,
+        body_class="rank",
+        title="Ranking",
+        deadline_ms=deadline_ms
+    )
 
 if __name__ == "__main__":
     app.run(debug=True)

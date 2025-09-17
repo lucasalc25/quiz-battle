@@ -1,36 +1,23 @@
 # models.py
-from sqlalchemy import (create_engine, Column, Text, Boolean, Integer, CHAR,
+from sqlalchemy import (create_engine, Column, String, Text, Boolean, Integer, CHAR,
                         CheckConstraint, text)
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.pool import NullPool
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///quiz.db")
 
-if not DATABASE_URL:
-    # fallback local
-    DATABASE_URL = "sqlite:///quiz.db"
+# Render/Postgres virá como postgres://...  (às vezes sem o +psycopg)
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
 
-def make_engine(url: str):
-    if url.startswith("sqlite"):
-        # Ambiente local simples
-        return create_engine(
-            url,
-            connect_args={"check_same_thread": False}
-        )
-    else:
-        # Postgres (Neon)
-        return create_engine(
-            url,
-            pool_pre_ping=True,
-            pool_size=3,
-            max_overflow=2,
-            pool_timeout=30,
-            pool_recycle=1800, 
-        )
+is_sqlite = DATABASE_URL.startswith("sqlite")
 
-engine = make_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+engine = create_engine(
+    DATABASE_URL,
+    future=True,
+    connect_args={"check_same_thread": False} if is_sqlite else {}
+)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 
 THEMES = ('Esportes','TV/Cinema','Jogos','Música','Lógica','História','Diversos')
@@ -63,3 +50,8 @@ class Leaderboard(Base):
     __tablename__ = 'leaderboard'
     nickname = Column(Text, primary_key=True)
     best_score = Column(Integer, nullable=False, server_default=text("0"))
+
+class Meta(Base):
+    __tablename__ = "meta"
+    key   = Column(String, primary_key=True)
+    value = Column(String, nullable=False)

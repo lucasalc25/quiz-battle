@@ -36,7 +36,7 @@
 
     {% if q.image_url %} {% set imgsrc = q.image_url %}
     <img
-      src="{{ imgsrc if imgsrc.startswith('http') else url_for('static', filename=images) }}"
+      src="{{ imgsrc if imgsrc.startswith('http') else url_for('static', filename=imgsrc) }}"
       alt="Imagem da pergunta"
       loading="lazy"
       decoding="async"

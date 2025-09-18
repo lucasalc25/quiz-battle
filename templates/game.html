@@ -1,11 +1,5 @@
 {% extends "base.html" %}{% block content %}
 
-<audio
-  id="tickSound"
-  src="{{ url_for('static', filename='audio/tick.mp3') }}"
-  preload="auto"
-></audio>
-
 <!-- Dados para a roleta em JSON puro -->
 <script type="application/json" id="themesJSON">
   {{ (themes | default([])) | tojson }}

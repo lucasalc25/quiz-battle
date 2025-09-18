@@ -1,7 +1,7 @@
 # app.py
 import random, os
 from flask import Flask, render_template, request, redirect, url_for, session
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from models import SessionLocal, User, Question, Leaderboard, THEMES, Base, engine
 from contextlib import contextmanager
 from models import Meta
@@ -36,7 +36,6 @@ def _maybe_reset_week(db):
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "28a08c230e257781ef22b1d7be9758a0")
-SCORING_MODE = os.getenv("SCORING_MODE", "total").lower()
 
 Base.metadata.create_all(engine)
 
@@ -233,8 +232,10 @@ def end():
         existed     = any(r.nickname == nickname for r in rows_before)
         old_pos     = _find_position(rows_before, nickname)
 
+        mode = os.getenv("SCORING_MODE", "best").lower()
+
         if score > 0:
-            if SCORING_MODE == "total":
+            if mode == "total":
                 # Acumulado semanal: soma pontos e conta partidas, preservando best_score
                 db.execute(text("""
                     INSERT INTO leaderboard (nickname, best_score, total_points, games_played)
@@ -302,10 +303,11 @@ def leaderboard():
     with db_session() as db:
         _maybe_reset_week(db)
         if mode == "best":
-            order_cols = (Leaderboard.best_score.desc(), Leaderboard.nickname.asc())
+            order_cols = (func.coalesce(Leaderboard.best_score, 0).desc(), Leaderboard.nickname.asc())
         else:
             mode = "total"
-            order_cols = (Leaderboard.total_points.desc(), Leaderboard.nickname.asc())
+            order_cols = (func.coalesce(Leaderboard.total_points, 0).desc()), Leaderboard.nickname.asc()
+
         rows = db.execute(select(Leaderboard).order_by(*order_cols).limit(10)).scalars().all()
 
     deadline = next_monday_midnight()

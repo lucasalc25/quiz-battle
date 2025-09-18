@@ -17,14 +17,14 @@ engine = create_engine(
     future=True,
     connect_args={"check_same_thread": False} if is_sqlite else {}
 )
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False, future=True)
 Base = declarative_base()
 
 THEMES = ('Esportes','TV/Cinema','Jogos','Música','Lógica','História','Diversos')
 
 class User(Base):
     __tablename__ = 'users'
-    nickname = Column(Text, primary_key=True)                  # UNIQUE implícito
+    nickname = Column(Text, primary_key=True)                 
     has_perfect_medal = Column(Boolean, nullable=False, server_default=text("false"))
 
 class Question(Base):
@@ -47,9 +47,11 @@ class Question(Base):
     )
 
 class Leaderboard(Base):
-    __tablename__ = 'leaderboard'
-    nickname = Column(Text, primary_key=True)
-    best_score = Column(Integer, nullable=False, server_default=text("0"))
+    __tablename__ = "leaderboard"
+    nickname     = Column(String, primary_key=True)
+    best_score   = Column(Integer, nullable=False, default=0)
+    total_points = Column(Integer, nullable=False, default=0)
+    games_played = Column(Integer, nullable=False, default=0)
 
 class Meta(Base):
     __tablename__ = "meta"

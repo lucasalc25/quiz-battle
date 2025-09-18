@@ -26,7 +26,8 @@ def _maybe_reset_week(db):
 
     meta = db.get(Meta, "last_reset_week")
     if not meta or meta.value != cur:
-        db.execute(text("DELETE FROM leaderboard"))
+        # zera acumulado semanal; preserva best_score
+        db.execute(text("UPDATE leaderboard SET total_points = 0, games_played = 0"))
         if meta:
             meta.value = cur
         else:
@@ -34,9 +35,9 @@ def _maybe_reset_week(db):
 
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "troque-esta-chave")
+app.secret_key = os.getenv("SECRET_KEY", "28a08c230e257781ef22b1d7be9758a0")
+SCORING_MODE = os.getenv("SCORING_MODE", "total").lower()
 
-# cria tabelas em cold start (seguro: idempotente)
 Base.metadata.create_all(engine)
 
 THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "Diversos"]
@@ -227,22 +228,40 @@ def end():
 
     with db_session() as db:
         _maybe_reset_week(db)
-        
+
         rows_before = _load_ranking(db)
         existed     = any(r.nickname == nickname for r in rows_before)
         old_pos     = _find_position(rows_before, nickname)
 
         if score > 0:
-            db.execute(text("""
-                INSERT INTO leaderboard (nickname, best_score)
-                VALUES (:nick, :score)
-                ON CONFLICT(nickname) DO UPDATE SET
-                  best_score = CASE
-                    WHEN excluded.best_score > leaderboard.best_score
-                    THEN excluded.best_score
-                    ELSE leaderboard.best_score
-                  END
-            """), {"nick": nickname, "score": score})
+            if SCORING_MODE == "total":
+                # Acumulado semanal: soma pontos e conta partidas, preservando best_score
+                db.execute(text("""
+                    INSERT INTO leaderboard (nickname, best_score, total_points, games_played)
+                    VALUES (:nick, :score, :score, 1)
+                    ON CONFLICT(nickname) DO UPDATE SET
+                    best_score = CASE
+                        WHEN EXCLUDED.best_score > leaderboard.best_score
+                        THEN EXCLUDED.best_score
+                        ELSE leaderboard.best_score
+                    END,
+                    total_points = leaderboard.total_points + :score,
+                    games_played = leaderboard.games_played + 1
+                """), {"nick": nickname, "score": score})
+            else:
+                # Clássico: ranqueia por melhor rodada; (opcional) só incrementa games_played
+                db.execute(text("""
+                    INSERT INTO leaderboard (nickname, best_score, total_points, games_played)
+                    VALUES (:nick, :score, 0, 1)
+                    ON CONFLICT(nickname) DO UPDATE SET
+                    best_score = CASE
+                        WHEN EXCLUDED.best_score > leaderboard.best_score
+                        THEN EXCLUDED.best_score
+                        ELSE leaderboard.best_score
+                    END,
+                    games_played = leaderboard.games_played + 1
+                """), {"nick": nickname, "score": score})
+
 
             if score >= 30:
                 u = db.get(User, nickname)
@@ -279,25 +298,22 @@ def end():
 
 @app.get("/leaderboard")
 def leaderboard():
+    mode = request.args.get("mode", "total")
     with db_session() as db:
         _maybe_reset_week(db)
-
-        rows = db.execute(
-            select(Leaderboard)
-            .order_by(Leaderboard.best_score.desc(), Leaderboard.nickname.asc())
-            .limit(20)
-        ).scalars().all()
+        if mode == "best":
+            order_cols = (Leaderboard.best_score.desc(), Leaderboard.nickname.asc())
+        else:
+            mode = "total"
+            order_cols = (Leaderboard.total_points.desc(), Leaderboard.nickname.asc())
+        rows = db.execute(select(Leaderboard).order_by(*order_cols).limit(10)).scalars().all()
 
     deadline = next_monday_midnight()
     deadline_ms = int(deadline.timestamp() * 1000)
 
-    return render_template(
-        "leaderboard.html",
-        rows=rows,
-        body_class="rank",
-        title="Ranking",
-        deadline_ms=deadline_ms
-    )
+    return render_template("leaderboard.html",
+        rows=rows, body_class="rank", title="Ranking",
+        deadline_ms=deadline_ms, mode=mode)
 
 if __name__ == "__main__":
     app.run(debug=True)

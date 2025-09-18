@@ -76,7 +76,6 @@ body.home main.container {
 
 body.rank main.container {
   max-width: 420px;
-  padding-inline: 30px;
   text-align: center;
 }
 
@@ -190,6 +189,7 @@ p {
 ol {
   list-style-position: inside;
   padding-left: 0;
+  margin: 0;
 }
 
 li {

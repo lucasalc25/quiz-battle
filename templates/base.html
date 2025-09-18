@@ -19,6 +19,11 @@
     <link
       rel="preload"
       as="audio"
+      href="{{ url_for('static', filename='audio/tick.mp3') }}"
+    />
+    <link
+      rel="preload"
+      as="audio"
       href="{{ url_for('static', filename='audio/home.mp3') }}"
     />
     <link
@@ -44,7 +49,7 @@
         aria-label="Alternar som"
         data-turbo-permanent
       >
-        <i data-lucide="music"></i>
+        <i data-lucide="volume-x"></i>
       </button>
 
       <audio id="bgMusic" autoplay loop muted data-turbo-permanent>

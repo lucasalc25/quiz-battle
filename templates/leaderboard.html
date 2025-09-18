@@ -1,12 +1,73 @@
 {% extends "base.html" %}{% block content %}
-<h2>Ranking</h2>
+
+<div class="rank-modes" role="tablist" aria-label="Mudar ranking">
+  <a
+    class="left tab {{ 'active' if mode == 'total' else '' }}"
+    href="{{ url_for('leaderboard') }}?mode=total"
+    role="tab"
+    aria-selected="{{ 'true' if mode=='total' else 'false' }}"
+  >
+    Ranking Semanal
+  </a>
+  <a
+    class="right tab {{ 'active' if mode == 'best' else '' }}"
+    href="{{ url_for('leaderboard') }}?mode=best"
+    role="tab"
+    aria-selected="{{ 'true' if mode=='best' else 'false' }}"
+  >
+    Ranking por partida
+  </a>
+</div>
+
+<!-- Timer semanal -->
+<div
+  id="week-timer"
+  class="week-timer {{ 'is-visible' if mode == 'total' else 'is-hidden' }}"
+  data-deadline-ms="{{ deadline_ms }}"
+  aria-hidden="{{ 'false' if mode == 'total' else 'true' }}"
+>
+  <span class="label">Reinicia em:</span>
+  <strong id="countdown">—</strong>
+</div>
+
+<script>
+  (function () {
+    const wrap = document.getElementById("week-timer");
+    if (!wrap || wrap.classList.contains("is-hidden")) return;
+
+    const raw = wrap.dataset.deadlineMs || "";
+    const deadline = Number.parseInt(raw, 10);
+    if (!Number.isFinite(deadline) || deadline <= 0) return;
+
+    const el = document.getElementById("countdown");
+    function pad(n) {
+      return String(n).padStart(2, "0");
+    }
+    function tick() {
+      const diff = Math.max(0, deadline - Date.now());
+      const t = Math.floor(diff / 1000);
+      const d = Math.floor(t / 86400);
+      const h = Math.floor((t % 86400) / 3600);
+      const m = Math.floor((t % 3600) / 60);
+      const s = t % 60;
+      el.textContent =
+        (d > 0 ? d + "d " : "") + pad(h) + ":" + pad(m) + ":" + pad(s);
+      if (diff <= 0) {
+        location.reload();
+        return;
+      }
+      setTimeout(tick, 1000);
+    }
+    tick();
+  })();
+</script>
 
 {% if just_added %}
 <div class="banner">Você entrou no ranking!</div>
 {% endif %} {% if promoted_nick %}
 <div class="banner">
   Parabéns! Você subiu {{ positions_up }} posiç{{ 'ões' if positions_up > 1 else
-  'ão'}} e agora está em <strong>{{ new_rank }}º</strong>!
+  'ão' }} e agora está em <strong>{{ new_rank }}º</strong>!
 </div>
 {% endif %}
 
@@ -16,12 +77,19 @@
     class="{% if (just_added and r.nickname == just_added) or (promoted_nick and r.nickname == promoted_nick) %}new-entry{% endif %}"
   >
     {% if loop.index == 1 %} 🥇 {% elif loop.index == 2 %} 🥈 {% elif loop.index
-    == 3 %} 🥉 {% endif %} {{ r.nickname }} — {{ r.best_score }} pontos
+    == 3 %} 🥉 {% endif %} {{ r.nickname }} — {% if mode == 'best' %} {{
+    r.best_score }} ponto{{ 's' if r.best_score > 1}} {% else %} {{
+    r.total_points }} ponto{{ 's' if r.total_points > 1}} {% endif %}
   </li>
   {% endfor %}
 </ol>
 
-<a href="./" class="button" style="margin-top: 2rem">Início</a>
+<a
+  href="./"
+  class="button"
+  style="margin-top: 2rem; margin-inline: auto; width: 30%"
+  >Início</a
+>
 
 <style>
   :root[data-theme="light"] {
@@ -31,8 +99,15 @@
 
     --rank-highlight-bg: #20b3e03b;
     --rank-highlight-shadow: rgba(59, 130, 246, 0.25);
-  }
 
+    --timer-text: #1e293b;
+    --timer-border: #c7d2fe;
+
+    --tab-bg: #e5e7eb;
+    --tab-active-bg: #2563eb;
+    --tab-active-text: #fff;
+    --tab-text: #1f2937;
+  }
   :root[data-theme="dark"] {
     --banner-bg: #14532d;
     --banner-border: #22c55e;
@@ -40,9 +115,16 @@
 
     --rank-highlight-bg: #22eed320;
     --rank-highlight-shadow: rgba(59, 246, 130, 0.4);
+
+    --timer-text: #e5e7eb;
+    --timer-border: #136be66b;
+
+    --tab-bg: #111827;
+    --tab-active-bg: #2563eb;
+    --tab-active-text: #fff;
+    --tab-text: #e5e7eb;
   }
 
-  /* Faixa de entrada no ranking */
   .banner {
     background: var(--banner-bg);
     border: 1px solid var(--banner-border);
@@ -53,14 +135,13 @@
     text-align: center;
   }
 
-  /* Destaque na linha do jogador */
   .rank-list .new-entry {
     position: relative;
     animation: pulseIn 1.2s ease-out 0s 1;
     background: var(--rank-highlight-bg);
     border-radius: 8px;
+    margin: 0;
   }
-
   @keyframes pulseIn {
     0% {
       transform: scale(0.97);
@@ -74,6 +155,67 @@
       transform: scale(1);
       box-shadow: 0 0 0 0 var(--rank-highlight-shadow);
     }
+  }
+
+  /* Tabs de modo */
+  .rank-modes {
+    display: inline-flex;
+    justify-content: center;
+    margin: 8px 0 14px;
+    width: 100%;
+  }
+
+  .rank-modes .tab {
+    display: inline-block;
+    padding: 8px 12px;
+    background: var(--tab-bg);
+    color: var(--tab-text);
+    text-decoration: none;
+    font-weight: 600;
+    border: 1px solid transparent;
+  }
+
+  .rank-modes .tab.active {
+    background: var(--tab-active-bg);
+    color: var(--tab-active-text);
+  }
+
+  .left.tab {
+    border-start-start-radius: 10px;
+    border-bottom-left-radius: 10px;
+  }
+
+  .right.tab {
+    border-start-end-radius: 10px;
+    border-bottom-right-radius: 10px;
+  }
+
+  /* Timer */
+  .week-timer {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    color: var(--timer-text);
+    border: 1px solid var(--timer-border);
+    border-radius: 10px;
+    padding: 8px 15px;
+    margin: 8px auto 16px;
+    min-height: 40px;
+  }
+
+  .week-timer.is-hidden {
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  .week-timer .label {
+    opacity: 0.85;
+    font-size: 0.95rem;
+  }
+  #countdown {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.5px;
   }
 </style>
 

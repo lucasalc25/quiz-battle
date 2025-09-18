@@ -115,6 +115,19 @@
     const root = document.getElementById("game-root");
     const timerEl = document.getElementById("timer");
 
+    // 🔁 URL do tick (vai ser pré-carregado em memória pela Web Audio)
+    const TICK_URL =
+      "{{ url_for('static', filename='audio/roulette-tick.mp3') }}";
+
+    // Helper: posso tocar SFX? (respeita o mesmo mute do bgMusic + localStorage)
+    function canPlaySfx() {
+      const bg = document.getElementById("bgMusic");
+      const saved = localStorage.getItem("muted"); // "1" (muted) | "0" (som)
+      // começa mutado por padrão se saved == null (como já faz no seu projeto)
+      const logicalMuted = saved === "1" || saved === null;
+      return bg && !bg.muted && !logicalMuted;
+    }
+
     // ===== ROLETA =====
     if (overlay) {
       const display = document.getElementById("rouletteDisplay");
@@ -135,7 +148,6 @@
       let themes = parseJSONSafe("themesJSON", []);
       const finalTheme = parseJSONSafe("finalThemeJSON", null);
 
-      // Fallback defensivo (se por algum motivo vier vazio)
       if (!Array.isArray(themes) || themes.length === 0) {
         themes = [
           "Esportes",
@@ -148,25 +160,43 @@
         ];
       }
 
-      // === áudio de tick ===
-      const tickAudio = document.getElementById("tickSound");
-      const isMute = localStorage.getItem("muted");
+      // 🔁 Pré-carrega o tick na chegada da página (assíncrono, sem travar)
+      if (
+        window.RouletteAudio &&
+        typeof window.RouletteAudio.preload === "function"
+      ) {
+        window.RouletteAudio.preload(TICK_URL);
+      }
+      // 🔁 Em dispositivos móveis, garanta o "unlock" de áudio no primeiro clique
+      document.addEventListener(
+        "click",
+        () => {
+          if (
+            window.RouletteAudio &&
+            typeof window.RouletteAudio.preload === "function"
+          ) {
+            window.RouletteAudio.preload(TICK_URL);
+          }
+        },
+        { once: true }
+      );
 
+      // 🔁 Tocar o “tick” via Web Audio (sem gaps)
       function playTick() {
-        if (!tickAudio) return;
-        try {
-          // reinicia e tenta tocar (autoplay pode bloquear em alguns browsers; ignore erro)
-          tickAudio.currentTime = 0;
-          const p = tickAudio.play();
-          if (p && typeof p.catch === "function") p.catch(() => {});
-        } catch (_) {}
+        if (!canPlaySfx()) return;
+        if (
+          window.RouletteAudio &&
+          typeof window.RouletteAudio.tick === "function"
+        ) {
+          window.RouletteAudio.tick();
+        }
       }
 
-      // Animação mais rápida/curta
+      // Animação
       let idx = 0,
         delay = 28,
         ticks = 0;
-      const total = 21; // antes 32, agora bem mais ágil
+      const total = 21;
 
       function tick() {
         const name = themes[idx % themes.length] || "—";
@@ -179,9 +209,10 @@
         void display.offsetWidth;
         display.classList.add("swap");
 
-        if (isMute == 0) playTick();
+        // 🔁 toca o sfx a cada passo
+        playTick();
 
-        // desacelera suavemente
+        // desaceleração suave
         if (ticks > total * 0.66) delay += 40;
         else if (ticks > total * 0.33) delay += 20;
         else delay += 10;
@@ -191,12 +222,10 @@
         } else {
           display.textContent = finalTheme ?? "—";
           overlay.setAttribute("data-roulette", display.textContent);
-          // PAUSA maior antes de revelar o conteúdo (ajuste aqui: 1500ms)
           setTimeout(() => {
             overlay.classList.add("hide");
             if (content) {
               content.hidden = false;
-              // força um frame para transição
               requestAnimationFrame(() => content.classList.add("show"));
             }
             startQuestionTimer();
@@ -208,7 +237,7 @@
         tick();
       }, 200);
     } else {
-      // sem roleta: mostra conteúdo já com fade (se quiser)
+      // sem roleta
       if (content) {
         content.hidden = false;
         requestAnimationFrame(() => content.classList.add("show"));
@@ -216,11 +245,10 @@
       startQuestionTimer();
     }
 
-    // ===== LÓGICA DA PERGUNTA (timer + clique) =====
+    // ===== TIMER DA PERGUNTA =====
     function startQuestionTimer() {
       if (!root) return;
       const inFeedback = root.dataset.feedback === "1";
-
       if (inFeedback) {
         if (timerEl) timerEl.textContent = "–";
         return;

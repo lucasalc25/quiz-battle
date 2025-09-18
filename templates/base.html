@@ -1,12 +1,5 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-  <script>
-    (function () {
-      const saved = localStorage.getItem("theme");
-      const preferred = saved ? saved : "dark";
-      document.documentElement.setAttribute("data-theme", preferred);
-    })();
-  </script>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -16,6 +9,61 @@
     <link rel="stylesheet" href="../static/styles.css" />
     <script src="https://unpkg.com/@hotwired/turbo@8.0.4/dist/turbo.es2017-umd.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+      (function () {
+        const saved = localStorage.getItem("theme");
+        const preferred = saved ? saved : "dark";
+        document.documentElement.setAttribute("data-theme", preferred);
+      })();
+
+      /* Audio curto para a roleta – sem lag */
+      window.RouletteAudio = (function () {
+        let ctx,
+          buffer,
+          preloadPromise = null;
+
+        async function ensureContext() {
+          if (!ctx)
+            ctx = new (window.AudioContext || window.webkitAudioContext)();
+          if (ctx.state === "suspended") {
+            try {
+              await ctx.resume();
+            } catch (e) {}
+          }
+          return ctx;
+        }
+
+        async function preload(url) {
+          if (buffer) return buffer;
+          if (!preloadPromise) {
+            preloadPromise = (async () => {
+              const ctx = await ensureContext();
+              const res = await fetch(url, { cache: "force-cache" });
+              const arr = await res.arrayBuffer();
+              buffer = await ctx.decodeAudioData(arr);
+              return buffer;
+            })();
+          }
+          return preloadPromise;
+        }
+
+        async function tick() {
+          try {
+            const ctx = await ensureContext();
+            if (!buffer) return; // ainda não carregou
+            const src = ctx.createBufferSource();
+            src.buffer = buffer;
+            // levemente mais “clique”:
+            // src.playbackRate.value = 1.05;
+            src.connect(ctx.destination);
+            src.start();
+          } catch (e) {}
+        }
+
+        return { preload, tick };
+      })();
+    </script>
+
     <link
       rel="preload"
       as="audio"

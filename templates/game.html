@@ -116,8 +116,7 @@
     const timerEl = document.getElementById("timer");
 
     // 🔁 URL do tick (vai ser pré-carregado em memória pela Web Audio)
-    const TICK_URL =
-      "{{ url_for('static', filename='audio/roulette-tick.mp3') }}";
+    const TICK_URL = "{{ url_for('static', filename='audio/tick.mp3') }}";
 
     // Helper: posso tocar SFX? (respeita o mesmo mute do bgMusic + localStorage)
     function canPlaySfx() {

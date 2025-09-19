@@ -2,21 +2,32 @@
 from sqlalchemy import (create_engine, Column, String, Text, Boolean, Integer, CHAR,
                         CheckConstraint, text)
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.pool import NullPool
 import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///quiz.db")
 
-# Render/Postgres virá como postgres://...  (às vezes sem o +psycopg)
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+def make_engine(url: str):
+    if url.startswith("sqlite"):
+        # SQLite: sem pool e liberando thread check
+        return create_engine(
+            url,
+            connect_args={"check_same_thread": False},
+            poolclass=NullPool,
+            future=True,
+        )
+    # Postgres (Neon): pool pequeno e pre_ping
+    return create_engine(
+        url,
+        pool_size=int(os.getenv("DB_POOL_SIZE", "3")),
+        max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "2")),
+        pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
+        pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
+        pool_pre_ping=True,
+        future=True,
+    )
 
-is_sqlite = DATABASE_URL.startswith("sqlite")
-
-engine = create_engine(
-    DATABASE_URL,
-    future=True,
-    connect_args={"check_same_thread": False} if is_sqlite else {}
-)
+engine = make_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False, future=True)
 Base = declarative_base()
 

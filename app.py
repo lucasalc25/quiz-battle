@@ -1,5 +1,6 @@
 # app.py
 import random, os
+import secrets
 from flask import Flask, render_template, request, redirect, url_for, session
 from sqlalchemy import select, text, func
 from models import SessionLocal, User, Question, Leaderboard, THEMES, Base, engine
@@ -61,28 +62,56 @@ def db_readonly():
     finally:
         db.close()
 
+@app.after_request
+def no_cache(resp):
+    if request.path in ("/game", "/answer", "/continue"):
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+    return resp
+
 def _next_qid_from_queue():
-    """Pega o próximo ID da fila que ainda não foi perguntado; atualiza a fila na sessão."""
+    # respeita pergunta corrente
+    current = session.get("current_qid")
+    if current:
+        return current
+
     queue = session.get("queue_ids") or []
     asked = set(session.get("asked_ids") or [])
-    qid = None
-    while queue and qid is None:
-        cand = queue.pop(0)  # FIFO
+
+    # pega o primeiro ainda não perguntado
+    for cand in queue:
         if cand not in asked:
-            qid = cand
-    session["queue_ids"] = queue
-    return qid
+            session["current_qid"] = cand
+            session["current_token"] = secrets.token_urlsafe(16)
+            return cand
+    return None
 
 def _load_ranking(db):
-    return db.execute(
-        select(Leaderboard).order_by(
-            Leaderboard.best_score.desc(), Leaderboard.nickname.asc()
-        )
-    ).scalars().all()
+    res = db.execute(
+    select(
+        Leaderboard.nickname,
+        Leaderboard.best_score,
+        Leaderboard.total_points,
+        Leaderboard.games_played
+    ).order_by(
+        Leaderboard.best_score.desc(),
+        Leaderboard.nickname.asc()
+    )
+    ).all()
+    return [
+        {
+            "nickname": n,
+            "best_score": b or 0,
+            "total_points": t or 0,
+            "games_played": g or 0,
+        }
+        for (n, b, t, g) in res
+    ]
 
 def _find_position(rows, nickname):
     for i, r in enumerate(rows, start=1):
-        if r.nickname == nickname:
+        if r["nickname"] == nickname:
             return i
     return None
 
@@ -116,7 +145,10 @@ def start():
         score=0,
         queue_ids=ids,
     )
-    session.pop("roulette_shown", None)
+
+    # LIMPE estados de rodada/pergunta
+    for k in ("roulette_shown", "current_qid", "current_token", "ended", "feedback_state"):
+        session.pop(k, None)
 
     return redirect(url_for("game"))
 
@@ -155,6 +187,7 @@ def game():
                 show_roulette=False,
                 body_class="game",
                 title="Jogo",
+                qtoken=session.get("current_token"),
             )
         # sem fb → cai no modo pergunta normal
 
@@ -179,16 +212,41 @@ def game():
         show_roulette=show_roulette,
         body_class="game",
         title="Jogo",
+        qtoken=session.get("current_token"),
     )
 
 @app.post("/answer")
 def answer():
-    picked  = (request.form.get("picked") or "").upper()
-    correct = (request.form.get("correct") or "").upper()
-    qid     = int(request.form.get("qid"))
+    picked   = (request.form.get("picked") or "").upper()
+    correct  = (request.form.get("correct") or "").upper()
+    qid_str  = request.form.get("qid")
+    qtoken   = request.form.get("qtoken")
 
-    timed_out  = (picked == "TIMEOUT")
+    # valida qid
+    try:
+        qid = int(qid_str)
+    except Exception:
+        return redirect(url_for("game"))
+
+    # valida instância (qid + token)
+    current_qid   = session.get("current_qid")
+    current_token = session.get("current_token")
+    if not current_qid or not current_token or qid != current_qid or qtoken != current_token:
+        # tentativa de reuso/volta → reabre jogo (não processa)
+        return redirect(url_for("game"))
+
+    timed_out   = (picked == "TIMEOUT")
     was_correct = (picked == correct) and not timed_out
+
+    # CONSUME a pergunta (remove da fila) e limpa instância
+    queue = session.get("queue_ids") or []
+    try:
+        queue.remove(qid)
+    except ValueError:
+        pass
+    session["queue_ids"] = queue
+    session["current_qid"] = None
+    session["current_token"] = None
 
     asked = session.get("asked_ids") or []
     if was_correct and (qid not in asked):
@@ -197,8 +255,8 @@ def answer():
 
     session["feedback_state"] = {
         "qid": qid,
-        "was_correct": was_correct,
-        "timed_out": timed_out,
+        "was_correct": bool(was_correct),
+        "timed_out": bool(timed_out),
         "picked": picked if picked in ["A","B","C","D"] else None,
         "correct": correct,
     }
@@ -208,11 +266,13 @@ def answer():
 @app.post("/continue")
 def go_next():
     last = request.form.get("last", "correct")
-    if last in ("wrong", "timeout"):           # << aceita timeout como fim
+    if last in ("wrong", "timeout"):
+        session["ended"] = True
         return redirect(url_for("end", reason=last))
 
     asked = session.get("asked_ids") or []
     if len(asked) >= 30:
+        session["ended"] = True
         return redirect(url_for("end", reason="completou"))
     return redirect(url_for("game"))
 
@@ -228,12 +288,11 @@ def end():
     with db_session() as db:
         _maybe_reset_week(db)
 
-        rows_before = _load_ranking(db)
-        existed     = any(r.nickname == nickname for r in rows_before)
+        rows_before = _load_ranking(db)  # lista de dicts
+        existed     = any(r["nickname"] == nickname for r in rows_before)
         old_pos     = _find_position(rows_before, nickname)
 
         if score > 0:
-            # Sempre: atualiza recorde (best_score), acumula (total_points) e conta partida
             db.execute(text("""
                 INSERT INTO leaderboard (nickname, best_score, total_points, games_played)
                 VALUES (:nick, :score, :score, 1)
@@ -245,19 +304,26 @@ def end():
                   games_played = leaderboard.games_played + EXCLUDED.games_played
             """), {"nick": nickname, "score": score})
 
-
             if score >= 30:
                 u = db.get(User, nickname)
                 if u:
                     u.has_perfect_medal = True
 
         if score == 0:
+            # LIMPA estado da rodada ANTES de retornar
+            for k in ("asked_ids","current_qid","current_token","ended","roulette_shown","feedback_state"):
+                session.pop(k, None)
+
             return render_template("end.html",
                                    score=score, perfect=False, reason=reason,
                                    title="Fim da partida", body_class="end")
 
         rows_after = _load_ranking(db)
         new_pos    = _find_position(rows_after, nickname)
+
+    # LIMPA estado da rodada antes dos returns seguintes
+    for k in ("asked_ids","current_qid","current_token","ended","roulette_shown","feedback_state"):
+        session.pop(k, None)
 
     if not existed:
         return render_template("leaderboard.html",
@@ -277,6 +343,7 @@ def end():
     return render_template("end.html",
                            score=score, perfect=(score >= 30),
                            reason=reason, title="Fim da partida", body_class="end")
+
 
 
 @app.get("/leaderboard")

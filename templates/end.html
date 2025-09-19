@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block content %}
 <h2>
   {% if perfect %}Perfeito! Você acertou todas!{% elif score==0 %}Não foi dessa
-  vez!{% else %}Você acertou {{ score }}/30{% endif %}
+  vez!{% else %}Você acertou {{ score }}/50{% endif %}
 </h2>
 {% if perfect %}<img src="../static/images/medal.png" class="medal" />{% endif
 %}

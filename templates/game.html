@@ -24,7 +24,7 @@
     data-feedback="{{ '1' if feedback|default(false) else '0' }}"
   >
     <div class="game-header">
-      <p class="muted">Tema: {{ theme }} • Acertos: {{ score }}/30</p>
+      <p class="muted">Tema: {{ theme }} • Acertos: {{ score }}/50</p>
       <strong id="timer">15</strong>
     </div>
 
@@ -43,7 +43,9 @@
     <form id="qform" method="post" action="/answer" class="options">
       <input type="hidden" name="qid" value="{{ q.id }}" />
       <input type="hidden" name="correct" value="{{ q.correct }}" />
+      <input type="hidden" name="wrong" value="{{ q.wrong }}" />
       <input type="hidden" name="picked" id="pickedHidden" />
+      <input type="hidden" name="qtoken" value="{{ qtoken }}" />
       <button
         class="button opt"
         type="button"
@@ -80,16 +82,11 @@
       <h3>⏰ Tempo esgotado!</h3>
       {% elif was_correct %}
       <h3>✅ Resposta correta!</h3>
-      {% else %}
+      {% else%}
       <h3>❌ Resposta incorreta</h3>
       {% endif %}
 
       <form class="feedback-form" method="post" action="/continue">
-        {% if was_correct %}
-        <input type="hidden" name="last" value="correct" />
-        {% else %}
-        <input type="hidden" name="last" value="wrong" />
-        {% endif %}
         <input
           type="hidden"
           name="last"
@@ -243,7 +240,7 @@
       if (!root) return;
       const inFeedback = root.dataset.feedback === "1";
       if (inFeedback) {
-        if (timerEl) timerEl.textContent = "–";
+        if (timerEl) timerEl.textContent = "";
         return;
       }
 

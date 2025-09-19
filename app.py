@@ -232,36 +232,18 @@ def end():
         existed     = any(r.nickname == nickname for r in rows_before)
         old_pos     = _find_position(rows_before, nickname)
 
-        mode = os.getenv("SCORING_MODE", "best").lower()
-
         if score > 0:
-            if mode == "total":
-                # Acumulado semanal: soma pontos e conta partidas, preservando best_score
-                db.execute(text("""
-                    INSERT INTO leaderboard (nickname, best_score, total_points, games_played)
-                    VALUES (:nick, :score, :score, 1)
-                    ON CONFLICT(nickname) DO UPDATE SET
-                    best_score = CASE
-                        WHEN EXCLUDED.best_score > leaderboard.best_score
-                        THEN EXCLUDED.best_score
-                        ELSE leaderboard.best_score
-                    END,
-                    total_points = leaderboard.total_points + :score,
-                    games_played = leaderboard.games_played + 1
-                """), {"nick": nickname, "score": score})
-            else:
-                # Clássico: ranqueia por melhor rodada; (opcional) só incrementa games_played
-                db.execute(text("""
-                    INSERT INTO leaderboard (nickname, best_score, total_points, games_played)
-                    VALUES (:nick, :score, 0, 1)
-                    ON CONFLICT(nickname) DO UPDATE SET
-                    best_score = CASE
-                        WHEN EXCLUDED.best_score > leaderboard.best_score
-                        THEN EXCLUDED.best_score
-                        ELSE leaderboard.best_score
-                    END,
-                    games_played = leaderboard.games_played + 1
-                """), {"nick": nickname, "score": score})
+            # Sempre: atualiza recorde (best_score), acumula (total_points) e conta partida
+            db.execute(text("""
+                INSERT INTO leaderboard (nickname, best_score, total_points, games_played)
+                VALUES (:nick, :score, :score, 1)
+                ON CONFLICT(nickname) DO UPDATE SET
+                  best_score = CASE
+                      WHEN EXCLUDED.best_score > leaderboard.best_score
+                      THEN EXCLUDED.best_score ELSE leaderboard.best_score END,
+                  total_points = leaderboard.total_points + EXCLUDED.total_points,
+                  games_played = leaderboard.games_played + EXCLUDED.games_played
+            """), {"nick": nickname, "score": score})
 
 
             if score >= 30:
@@ -300,22 +282,35 @@ def end():
 @app.get("/leaderboard")
 def leaderboard():
     mode = request.args.get("mode", "total")
+    if mode not in ("total", "best"):
+        mode = "total"
+
     with db_session() as db:
         _maybe_reset_week(db)
-        if mode == "best":
-            order_cols = (func.coalesce(Leaderboard.best_score, 0).desc(), Leaderboard.nickname.asc())
-        else:
-            mode = "total"
-            order_cols = (func.coalesce(Leaderboard.total_points, 0).desc()), Leaderboard.nickname.asc()
 
-        rows = db.execute(select(Leaderboard).order_by(*order_cols).limit(10)).scalars().all()
+        if mode == "best":
+            order_cols = (
+                func.coalesce(Leaderboard.best_score, 0).desc(),
+                Leaderboard.nickname.asc(),
+            )
+        else:  # total (semanal acumulado)
+            order_cols = (
+                func.coalesce(Leaderboard.total_points, 0).desc(),
+                Leaderboard.nickname.asc(),
+            )
+
+        rows = db.execute(
+            select(Leaderboard).order_by(*order_cols).limit(10)
+        ).scalars().all()
 
     deadline = next_monday_midnight()
     deadline_ms = int(deadline.timestamp() * 1000)
 
-    return render_template("leaderboard.html",
+    return render_template(
+        "leaderboard.html",
         rows=rows, body_class="rank", title="Ranking",
-        deadline_ms=deadline_ms, mode=mode)
+        deadline_ms=deadline_ms, mode=mode
+    )
 
 if __name__ == "__main__":
     app.run(debug=True)

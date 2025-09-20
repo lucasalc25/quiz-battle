@@ -271,7 +271,7 @@ def go_next():
         return redirect(url_for("end", reason=last))
 
     asked = session.get("asked_ids") or []
-    if len(asked) >= 30:
+    if len(asked) >= 50:
         session["ended"] = True
         return redirect(url_for("end", reason="completou"))
     return redirect(url_for("game"))
@@ -304,7 +304,7 @@ def end():
                   games_played = leaderboard.games_played + EXCLUDED.games_played
             """), {"nick": nickname, "score": score})
 
-            if score >= 30:
+            if score >= 50:
                 u = db.get(User, nickname)
                 if u:
                     u.has_perfect_medal = True
@@ -327,21 +327,21 @@ def end():
 
     if not existed:
         return render_template("leaderboard.html",
-                               rows=rows_after[:30],
+                               rows=rows_after[:50],
                                just_added=nickname,
                                body_class="rank", title="Ranking")
 
     moved_up = (old_pos is not None and new_pos is not None and new_pos < old_pos)
     if moved_up:
         return render_template("leaderboard.html",
-                               rows=rows_after[:30],
+                               rows=rows_after[:50],
                                promoted_nick=nickname,
                                positions_up=(old_pos - new_pos),
                                new_rank=new_pos,
                                body_class="rank", title="Ranking")
 
     return render_template("end.html",
-                           score=score, perfect=(score >= 30),
+                           score=score, perfect=(score >= 50),
                            reason=reason, title="Fim da partida", body_class="end")
 
 

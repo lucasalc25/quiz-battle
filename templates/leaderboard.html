@@ -77,9 +77,10 @@
     class="{% if (just_added and r.nickname == just_added) or (promoted_nick and r.nickname == promoted_nick) %}new-entry{% endif %}"
   >
     {% if loop.index == 1 %} 🥇 {% elif loop.index == 2 %} 🥈 {% elif loop.index
-    == 3 %} 🥉 {% endif %} {{ r.nickname }} — {% if mode == 'best' %} {{
+    == 3 %} 🥉 {% endif %} {{ r.nickname }} | {% if mode == 'best' %} {{
     r.best_score }} ponto{{ 's' if r.best_score > 1}} {% else %} {{
-    r.total_points }} ponto{{ 's' if r.total_points > 1}} {% endif %}
+    r.total_points }} ponto{{ 's' if r.total_points > 1}} | {{r.games_played}}
+    partida{{ 's' if r.games_played > 1}} {% endif %}
   </li>
   {% endfor %}
 </ol>

@@ -1,7 +1,7 @@
 # app.py
 import random, os
 import secrets
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response
 from sqlalchemy import select, text, func
 from models import SessionLocal, User, Question, Leaderboard, THEMES, Base, engine
 from contextlib import contextmanager
@@ -11,6 +11,56 @@ from datetime import datetime, time, timedelta
 
 TZ = ZoneInfo("America/Manaus")
 
+app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "28a08c230e257781ef22b1d7be9758a0")
+
+Base.metadata.create_all(engine)
+
+THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "Diversos"]
+
+MAINTENANCE_MODE = os.getenv("MAINTENANCE", "0") == "1"
+
+@app.before_request
+def check_maintenance():
+    if MAINTENANCE_MODE and request.path != "/maintenance":
+        return redirect(url_for("maintenance"))
+
+
+@app.get("/maintenance")
+def maintenance():
+    return render_template("maintenance.html",
+                           title="Em atualização",
+                           body_class="maintenance"), 503
+
+
+@app.get("/version.json")
+def version_json():
+    """
+    Retorna metadados de versão do app para o banner e pop-up automático.
+    Se quiser, troque o conteúdo abaixo a cada release.
+    """
+    payload = {
+        "version": "1.0.0",
+        "released_at": "2025-09-22 22:00-00:00",  # America/Manaus
+        "banner": "Atualização: ranking semanal com contagem regressiva + som otimizado na roleta!",
+        "notes": [
+            "Alteração no serviço de hospedagem pra evitar problemas ao acessar o site após determinado período.",
+            "Ajuste no audio durante o sorteio dos temas.",
+            "Mais 20 perguntas pra cada tema, totalizando 50 em cada.",
+            "2 modos de ranking: um com pontuação acumulativa por semana e outro de melhor desempenho numa partida.",
+            "Aumento no tamanho do cronômetro.",
+            "Bloqueio de navegação entre as perguntas para evitar trapaça"
+        ],
+        "cta": {"label": "Ver novidades", "action": "#whats-new"},
+    }
+    resp = make_response(jsonify(payload))
+    # Evita cache agressivo do navegador/CDN
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
 def next_monday_midnight(dt: datetime | None = None) -> datetime:
     now = dt or datetime.now(TZ)
     days_ahead = (7 - now.weekday()) % 7
@@ -19,6 +69,7 @@ def next_monday_midnight(dt: datetime | None = None) -> datetime:
         days_ahead = 7
     target_date = (now + timedelta(days=days_ahead)).date()
     return datetime.combine(target_date, time(0, 0), tzinfo=TZ)
+
 
 def _maybe_reset_week(db):
     now = datetime.now(TZ)
@@ -34,13 +85,6 @@ def _maybe_reset_week(db):
         else:
             db.add(Meta(key="last_reset_week", value=cur))
 
-
-app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "28a08c230e257781ef22b1d7be9758a0")
-
-Base.metadata.create_all(engine)
-
-THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "Diversos"]
 
 @contextmanager
 def db_session():
@@ -360,15 +404,19 @@ def leaderboard():
                 func.coalesce(Leaderboard.best_score, 0).desc(),
                 Leaderboard.nickname.asc(),
             )
+            where_cond = (func.coalesce(Leaderboard.best_score, 0) > 0)
         else:  # total (semanal acumulado)
             order_cols = (
                 func.coalesce(Leaderboard.total_points, 0).desc(),
                 Leaderboard.nickname.asc(),
+                
             )
+            where_cond = (func.coalesce(Leaderboard.total_points, 0) > 0)
 
         rows = db.execute(
-            select(Leaderboard).order_by(*order_cols).limit(10)
+            select(Leaderboard).where(where_cond).order_by(*order_cols).limit(10)
         ).scalars().all()
+
 
     deadline = next_monday_midnight()
     deadline_ms = int(deadline.timestamp() * 1000)

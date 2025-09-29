@@ -7,7 +7,6 @@ Authlib
 SQLAlchemy>=2.0.32
 psycopg2-binary
 psycopg[binary]
-psycopg2-binary
 
 # Utilidades
 python-dotenv

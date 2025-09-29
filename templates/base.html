@@ -7,6 +7,10 @@
 
     <title>{{ title or "Quiz Battle" }}</title>
     <link rel="stylesheet" href="../static/styles.css" />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      rel="stylesheet"
+    />
     <script src="https://unpkg.com/@hotwired/turbo@8.0.4/dist/turbo.es2017-umd.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script>
@@ -64,6 +68,37 @@
       })();
     </script>
 
+    <script>
+      document.addEventListener("turbo:load", () => {
+        document.querySelectorAll('a[href^="/auth/"]').forEach((a) => {
+          a.setAttribute("data-turbo", "false");
+        });
+        document.querySelectorAll('form[action^="/auth/"]').forEach((f) => {
+          f.setAttribute("data-turbo", "false");
+        });
+      });
+
+      document.addEventListener("turbo:before-visit", (e) => {
+        try {
+          const url = new URL(e.detail.url, window.location.origin);
+          if (url.pathname.startsWith("/auth/")) {
+            e.preventDefault();
+            window.location.href = url.href; // navegação hard
+          }
+        } catch (_) {}
+      });
+
+      // Como segunda camada, se algum link/form escapar:
+      document.addEventListener("turbo:load", () => {
+        document
+          .querySelectorAll('a[href^="/auth/"]')
+          .forEach((a) => a.setAttribute("data-turbo", "false"));
+        document
+          .querySelectorAll('form[action^="/auth/"]')
+          .forEach((f) => f.setAttribute("data-turbo", "false"));
+      });
+    </script>
+
     <link
       rel="preload"
       as="audio"
@@ -82,32 +117,77 @@
   </head>
 
   <body class="{{ body_class or '' }}" data-page="{{ body_class or '' }}">
+    {% if body_class != "maintenance" %}
     <header id="header">
-      <div class="theme-toggle" aria-label="Alternar tema">
-        <span class="theme-label">☀️</span>
-        <input id="themeChk" type="checkbox" aria-label="tema escuro" />
-        <label for="themeChk" class="theme-switch"></label>
-        <span class="theme-label">🌙</span>
+      <!-- Estado de conta -->
+      <div class="left-header">
+        <div
+          class="account"
+          style="
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          "
+        >
+          {% if current_user.is_authenticated %}
+          <span class="muted"
+            >Olá, <strong>{{ current_user.nickname }}</strong></span
+          >
+          <form method="post" action="{{ url_for('do_logout') }}">
+            <button class="button" style="padding: 6px 15px; font-size: 0.9rem">
+              Sair
+            </button>
+          </form>
+          {% else %}
+          <a
+            class="button"
+            href="{{ url_for('login') }}"
+            style="padding: 8px 15px; font-size: 0.9rem"
+            >Entrar</a
+          >
+          {% endif %}
+        </div>
       </div>
 
-      <!-- Botão de mute/unmute -->
-      <button
-        id="muteBtn"
-        class="mute-btn"
-        aria-label="Alternar som"
-        data-turbo-permanent
-      >
-        <i data-lucide="volume-x"></i>
-      </button>
+      <div class="right-header">
+        <button
+          id="themeBtn"
+          class="theme-btn"
+          title="Alternar tema"
+          data-turbo-permanent
+        >
+          <i data-lucide="sun"></i>
+        </button>
 
-      <audio id="bgMusic" autoplay loop muted data-turbo-permanent>
-        <source id="bgSource" src="" type="audio/mpeg" data-current="" />
-      </audio>
+        <!-- Botão de mute/unmute -->
+        <button
+          id="muteBtn"
+          class="mute-btn"
+          aria-label="Alternar som"
+          data-turbo-permanent
+        >
+          <i data-lucide="volume-x"></i>
+        </button>
+
+        <audio id="bgMusic" autoplay loop muted data-turbo-permanent>
+          <source id="bgSource" src="" type="audio/mpeg" data-current="" />
+        </audio>
+
+        <!-- Botão de novidades (sino) -->
+        <button
+          id="whatsNewBtn"
+          class="news-btn"
+          title="Novidades"
+          data-turbo-permanent
+        >
+          <i data-lucide="bell"></i>
+        </button>
+      </div>
     </header>
 
-    <main class="container">{% block content %}{% endblock %}</main>
-
     <script>
+      // ----------- CONTROLE DE AUDIO ----------------
       (function () {
         // ==== chaves de storage ====
         const KEY_TRACK = "bg_track"; // "home" | "game"
@@ -267,19 +347,47 @@
         }
       })();
 
+      // ----------- CONTROLE DE TEMAS ----------------
       (function () {
-        const chk = document.getElementById("themeChk");
-        const current =
-          document.documentElement.getAttribute("data-theme") || "dark";
-        // marca o switch conforme o tema atual
-        chk.checked = current === "dark";
+        const KEY = "theme";
+        const btn = document.getElementById("themeBtn");
 
-        chk.addEventListener("change", () => {
-          const next = chk.checked ? "dark" : "light";
-          document.documentElement.setAttribute("data-theme", next);
-          localStorage.setItem("theme", next);
+        function getTheme() {
+          return localStorage.getItem(KEY) || "dark"; // seu padrão
+        }
+        function setTheme(t) {
+          document.documentElement.dataset.theme = t; // adapte se usa outra mecânica
+          localStorage.setItem(KEY, t);
+
+          // troca de ícone ao estilo do botão de áudio
+          if (!btn) return;
+          if (window.lucide) {
+            btn.innerHTML =
+              t === "dark"
+                ? '<i data-lucide="sun"></i>'
+                : '<i data-lucide="moon"></i>';
+            try {
+              lucide.createIcons();
+            } catch (_) {}
+          } else {
+            btn.textContent = t === "dark" ? "🌙" : "☀️";
+          }
+        }
+        function toggleTheme() {
+          setTheme(getTheme() === "dark" ? "light" : "dark");
+        }
+
+        document.addEventListener("turbo:load", () => {
+          setTheme(getTheme()); // pinta o ícone correto ao carregar
+          if (btn && !btn.dataset.bound) {
+            btn.addEventListener("click", toggleTheme);
+            btn.dataset.bound = "1";
+          }
         });
       })();
     </script>
+    {% endif %}
+
+    <main class="container">{% block content %}{% endblock %}</main>
   </body>
 </html>

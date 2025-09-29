@@ -1,0 +1,44 @@
+{% extends "base.html" %}{% block content %}
+
+<h1>🚧 Em atualização 🚧</h1>
+<p>O quiz está passando por melhorias no momento.</p>
+<p>Tente novamente em alguns minutos.</p>
+
+<style>
+  * {
+    box-sizing: border-box;
+    font-family: system-ui, sans-serif;
+  }
+
+  body.maintenance {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+  }
+
+  body.maintenance .container h1 {
+    font-size: 1.75rem;
+    margin-bottom: 16px;
+  }
+  body.maintenance .container p {
+    margin: 8px 0;
+    font-size: 1.1rem;
+  }
+
+  body.maintenance .container {
+    max-width: 720px;
+    width: 92%;
+    margin: auto;
+    padding: 20px;
+
+    border-radius: 12px;
+    background: var(--container);
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+
+    display: flex;
+    flex-direction: column;
+  }
+</style>
+{% endblock %}

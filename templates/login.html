@@ -1,0 +1,32 @@
+{% extends "base.html" %} {% block content %}
+<div class="card" style="max-width: 420px; margin: auto">
+  <h2 class="card-title">Entrar</h2>
+  <div class="auth-buttons">
+    <a
+      class="auth-button"
+      href="{{ url_for('auth_google') }}"
+      data-turbo="false"
+      ><img
+        class="auth-icon"
+        src="https://www.svgrepo.com/show/475656/google-color.svg"
+        alt="Google"
+        width="24"
+        height="24"
+      />
+      Entrar com Google</a
+    >
+  </div>
+
+  <hr style="margin: 14px 0; opacity: 0.35" />
+
+  <form method="post" action="{{ url_for('login_email') }}" class="form-card">
+    <input type="email" name="email" placeholder="Email" required />
+    <input type="password" name="password" placeholder="Senha" required />
+    <button class="button" style="margin-top: 16px">Entrar com email</button>
+  </form>
+
+  <p class="muted" style="margin-top: 10px">
+    Não tem conta? <a href="{{ url_for('register') }}">Criar agora</a>
+  </p>
+</div>
+{% endblock %}

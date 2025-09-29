@@ -1,13 +1,22 @@
 # app.py
 import random, os
 import secrets
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response
+import unicodedata
+import re
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response, flash
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from authlib.integrations.flask_client import OAuth
 from sqlalchemy import select, text, func
 from models import SessionLocal, User, Question, Leaderboard, THEMES, Base, engine
 from contextlib import contextmanager
 from models import Meta
 from zoneinfo import ZoneInfo
 from datetime import datetime, time, timedelta
+from dotenv import load_dotenv
+
+
+load_dotenv() 
 
 TZ = ZoneInfo("America/Manaus")
 
@@ -16,13 +25,34 @@ app.secret_key = os.getenv("SECRET_KEY", "28a08c230e257781ef22b1d7be9758a0")
 
 Base.metadata.create_all(engine)
 
+login_manager = LoginManager(app)
+login_manager.login_view = "login"   # rota que mostra tela de login quando exige auth
+
+# Carrega usuário por id (no nosso caso, 'nickname')
+@login_manager.user_loader
+def load_user(user_id: str):
+    with db_readonly() as db:
+        return db.get(User, user_id)
+
+# OAuth (Authlib)
+oauth = OAuth(app)
+
+# Google OpenID Connect (usa discovery)
+oauth.register(
+    name="google",
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    client_kwargs={"scope": "openid email profile"},
+)
+
 THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "Diversos"]
 
-MAINTENANCE_MODE = os.getenv("MAINTENANCE", "0") == "1"
+MAINTENANCE_MODE = os.getenv("MAINTENANCE", "0")
 
 @app.before_request
 def check_maintenance():
-    if MAINTENANCE_MODE and request.path != "/maintenance":
+    if MAINTENANCE_MODE == "1" and request.path != "/maintenance":
         return redirect(url_for("maintenance"))
 
 
@@ -40,16 +70,14 @@ def version_json():
     Se quiser, troque o conteúdo abaixo a cada release.
     """
     payload = {
-        "version": "1.0.0",
-        "released_at": "2025-09-22 22:00-00:00",  # America/Manaus
-        "banner": "Atualização: ranking semanal com contagem regressiva + som otimizado na roleta!",
+        "version": "1.0.3",
+        "released_at": "2025-09-29 22:00-00:00",  # America/Manaus"
         "notes": [
-            "Alteração no serviço de hospedagem pra evitar problemas ao acessar o site após determinado período.",
-            "Ajuste no audio durante o sorteio dos temas.",
-            "Mais 20 perguntas pra cada tema, totalizando 50 em cada.",
-            "2 modos de ranking: um com pontuação acumulativa por semana e outro de melhor desempenho numa partida.",
-            "Aumento no tamanho do cronômetro.",
-            "Bloqueio de navegação entre as perguntas para evitar trapaça"
+            "Pop-up de novidades",
+            "Página de manutenção",
+            "Correção do reset do ranking semanal",
+            "Sistema de login e cadastro",
+            "Mudanças visuais na página inicial",
         ],
         "cta": {"label": "Ver novidades", "action": "#whats-new"},
     }
@@ -59,6 +87,168 @@ def version_json():
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
     return resp
+
+@app.get("/login")
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("home"))
+    return render_template("login.html", title="Entrar", body_class="home")
+
+@app.post("/login/email")
+def login_email():
+    email = (request.form.get("email") or "").strip().lower()
+    password = request.form.get("password") or ""
+    if not email or not password:
+        flash("Informe email e senha.", "warn")
+        return redirect(url_for("login"))
+
+    with db_readonly() as db:
+        user = db.query(User).filter(User.email == email).first()
+    if not user or not user.password_hash or not check_password_hash(user.password_hash, password):
+        flash("Credenciais inválidas.", "error")
+        return redirect(url_for("login"))
+
+    login_user(user)
+    flash(f"Bem-vindo(a), {user.nickname}!", "ok")
+    return redirect(url_for("home"))
+
+@app.get("/register")
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for("home"))
+    return render_template("register.html", title="Criar conta", body_class="home")
+
+@app.post("/register")
+def register_post():
+    nickname = (request.form.get("nickname") or "").strip()
+    email    = (request.form.get("email") or "").strip().lower()
+    password = request.form.get("password") or ""
+
+    errs = validate_registration(nickname, email, password)
+
+    with db_session() as db:
+        if not errs and db.get(User, nickname):
+            errs["nickname"] = "Esse nickname já está em uso."
+        if not errs and db.query(User).filter(User.email == email).first():
+            errs["email"] = "Esse email já está em uso."
+
+        if errs:
+            # Re-exibe o formulário com erros e valores preenchidos
+            return render_template(
+                "register.html",
+                title="Criar conta",
+                form={"nickname": nickname, "email": email},
+                errors=errs,
+                success=None
+            ), 400
+
+        # Sem erros → cria usuário
+        user = User(
+            nickname=nickname,
+            email=email,
+            password_hash=generate_password_hash(password),
+            is_active=True,
+        )
+        db.add(user)
+
+    # Já loga o usuário e manda pra home (igual Google)
+    login_user(user)
+    flash("Conta criada com sucesso!", "ok")
+    return redirect(url_for("home"))
+
+# --- Google OAuth ---
+@app.get("/auth/google")
+def auth_google():
+    redirect_uri = url_for("auth_google_cb", _external=True)
+    # Cria o redirect e, ANTES de retornar, loga as chaves da sessão
+    resp = oauth.google.authorize_redirect(redirect_uri)
+    try:
+        app.logger.info("SESSION KEYS BEFORE REDIRECT: %s", list(session.keys()))
+    except Exception:
+        pass
+    return resp
+
+
+@app.get("/auth/google/callback")
+def auth_google_cb():
+    try:
+        token = oauth.google.authorize_access_token()
+        userinfo = token.get("userinfo") or {}
+    except Exception as e:
+        app.logger.exception("Falha no OAuth Google: %s", e)
+        flash("Falha ao autenticar com o Google. Tente novamente.", "error")
+        return redirect(url_for("login"))
+
+    sub = userinfo.get("sub")
+    email = (userinfo.get("email") or "").lower()
+    display_name = beautify_name(userinfo.get("name") or (email.split("@")[0] if email else "Jogador"))
+
+    with db_session() as db:
+        user = db.query(User).filter(User.google_id == sub).first()
+        if not user and email:
+            user = db.query(User).filter(User.email == email).first()
+
+        if not user:
+            nick = unique_nickname_human(db, display_name)
+            user = User(nickname=nick, email=email, google_id=sub, is_active=True)
+            db.add(user)
+        else:
+            if not user.google_id:
+                user.google_id = sub
+            if email and not user.email:
+                user.email = email
+            # opcional: atualizar nickname para a versão “bonita” se hoje for vazio/padrão
+            # (comente se você preferir nunca mexer em nickname já existente)
+            if user.nickname and user.nickname.lower() == (email.split("@")[0] if email else "").lower():
+                new_nick = unique_nickname_human(db, display_name)
+                user.nickname = new_nick
+
+    login_user(user)
+    flash(f"Olá, {user.nickname}!", "ok")
+    nxt = session.pop("post_auth_next", "") or url_for("home")
+    return redirect(nxt)
+
+@app.post("/logout")
+def do_logout():
+    logout_user()
+    session.clear()
+    flash("Você saiu da conta.", "ok")
+    return redirect(url_for("login"))
+
+
+LOWER_WORDS_PT = {"de","da","do","das","dos","e"}
+
+
+def beautify_name(name: str) -> str:
+    """Normaliza acentos (NFC), espaçamentos e capitaliza iniciais em PT-BR."""
+    if not name:
+        return "Jogador"
+    s = unicodedata.normalize("NFC", name).strip()
+    s = re.sub(r"\s+", " ", s)
+    parts = s.split(" ")
+    out = []
+    for i, p in enumerate(parts):
+        w = p.lower()
+        if i > 0 and w in LOWER_WORDS_PT:
+            out.append(w)
+        else:
+            out.append(w[:1].upper() + w[1:])
+    return " ".join(out)
+
+def unique_nickname_human(db, base_name: str) -> str:
+    """
+    Tenta manter o nome 'bonito' como nickname. Se já existir, anexa um número.
+    Ex.: 'Lucas Silva', 'Lucas Silva 2', 'Lucas Silva 3', ...
+    """
+    base = beautify_name(base_name)
+    if not db.get(User, base):
+        return base
+    i = 2
+    while True:
+        cand = f"{base} {i}"
+        if not db.get(User, cand):
+            return cand
+        i += 1
 
 
 def next_monday_midnight(dt: datetime | None = None) -> datetime:
@@ -114,6 +304,33 @@ def no_cache(resp):
         resp.headers["Expires"] = "0"
     return resp
 
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+def validate_registration(nickname: str, email: str, password: str):
+    errors = {}
+    nn = (nickname or "").strip()
+    em = (email or "").strip().lower()
+    pw = password or ""
+
+    if not nn:
+        errors["nickname"] = "Informe um nickname."
+    elif len(nn) < 3:
+        errors["nickname"] = "Nickname precisa ter pelo menos 3 caracteres."
+    elif len(nn) > 50:
+        errors["nickname"] = "Nickname muito longo (máx. 50)."
+
+    if not em:
+        errors["email"] = "Informe um email."
+    elif not EMAIL_RE.match(em):
+        errors["email"] = "Email inválido."
+
+    if not pw:
+        errors["password"] = "Informe uma senha."
+    elif len(pw) < 6:
+        errors["password"] = "Senha muito curta (mín. 6)."
+
+    return errors
+
 def _next_qid_from_queue():
     # respeita pergunta corrente
     current = session.get("current_qid")
@@ -159,20 +376,31 @@ def _find_position(rows, nickname):
             return i
     return None
 
+
 @app.get("/")
+@login_required
 def home():
     return render_template("home.html", body_class="home")
 
+THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "Diversos"]
+
 @app.post("/start")
+@login_required
 def start():
-    nickname = (request.form.get("nickname") or "").strip()
+    # Se estiver logado, o nickname vem do current_user
+    if current_user.is_authenticated:
+        nickname = current_user.nickname
+    else:
+        nickname = (request.form.get("nickname") or "").strip()
+
     if not nickname:
         return redirect(url_for("home"))
 
     with db_session() as db:
         user = db.get(User, nickname)
         if not user:
-            db.add(User(nickname=nickname))
+            # Se for convidado criando nickname "solto", cria registro mínimo (sem email/senha)
+            db.add(User(nickname=nickname, is_active=True))
 
     theme = random.choice(THEMES)
 
@@ -196,7 +424,9 @@ def start():
 
     return redirect(url_for("game"))
 
+
 @app.get("/game")
+@login_required
 def game():
     nickname = session.get("nickname")
     theme    = session.get("theme")
@@ -260,6 +490,7 @@ def game():
     )
 
 @app.post("/answer")
+@login_required
 def answer():
     picked   = (request.form.get("picked") or "").upper()
     correct  = (request.form.get("correct") or "").upper()
@@ -308,6 +539,7 @@ def answer():
 
 
 @app.post("/continue")
+@login_required
 def go_next():
     last = request.form.get("last", "correct")
     if last in ("wrong", "timeout"):
@@ -322,6 +554,7 @@ def go_next():
 
 
 @app.get("/end")
+@login_required
 def end():
     reason   = request.args.get("reason", "")
     nickname = session.get("nickname")
@@ -391,6 +624,7 @@ def end():
 
 
 @app.get("/leaderboard")
+@login_required
 def leaderboard():
     mode = request.args.get("mode", "total")
     if mode not in ("total", "best"):

@@ -1,0 +1,77 @@
+{% extends "base.html" %} {% block content %}
+
+<div class="card" style="max-width: 420px; margin: auto">
+  <h2 class="card-title">Criar conta</h2>
+
+  <form
+    method="post"
+    action="{{ url_for('register_post') }}"
+    class="form-card"
+    style="gap: 8px"
+    data-turbo="false"
+  >
+    <input
+      type="text"
+      name="nickname"
+      placeholder="Nickname"
+      required
+      value="{{ (form.nickname if form else '')|e }}"
+    />
+    {% if errors and errors.nickname %}
+    <p class="form-msg error">{{ errors.nickname }}</p>
+    {% endif %}
+
+    <input
+      type="email"
+      name="email"
+      placeholder="Email"
+      required
+      value="{{ (form.email if form else '')|e }}"
+    />
+    {% if errors and errors.email %}
+    <p class="form-msg error">{{ errors.email }}</p>
+    {% endif %}
+
+    <input
+      type="password"
+      name="password"
+      placeholder="Senha"
+      required
+      minlength="6"
+    />
+    <!-- Mensagens abaixo da senha (erro OU sucesso) -->
+    {% if errors and errors.password %}
+    <p class="form-msg error">{{ errors.password }}</p>
+    {% elif success %}
+    <p class="form-msg ok">{{ success }}</p>
+    {% endif %}
+
+    <button class="button" style="margin-top: 20px">Criar conta</button>
+  </form>
+
+  <p class="muted" style="margin-top: 10px">
+    Já tem conta? <a href="{{ url_for('login') }}">Entrar</a>
+  </p>
+</div>
+
+{% if success %}
+<script>
+  setTimeout(function () {
+    window.location.href = "{{ next_url }}";
+  }, 1400);
+</script>
+{% endif %}
+
+<style>
+  .form-msg {
+    margin: 6px 0 0;
+    font-size: 0.95rem;
+  }
+  .form-msg.error {
+    color: #ff6b6b;
+  }
+  .form-msg.ok {
+    color: #4ade80;
+  }
+</style>
+{% endblock %}

@@ -1,14 +1,151 @@
 {% extends "base.html" %}{% block content %}
 
-<h1>Quiz Battle</h1>
+<img
+  src="../static/images/logo.png"
+  width="160px"
+  style="margin-bottom: 40px"
+  alt="Logo Quiz"
+/>
 
-<form method="post" action="/start" class="card">
-  <label>Nickname</label>
-  <input name="nickname" maxlength="20" required />
-  <div class="buttons">
-    <a href="./leaderboard" class="button">Ranking</a>
-    <button class="button">Iniciar</button>
+<div class="buttons">
+  <form method="post" action="{{ url_for('start') }}" data-turbo="false">
+    <button class="button" style="width: 100%; min-width: 130px">
+      Iniciar
+    </button>
+  </form>
+
+  <a class="button" href="{{ url_for('leaderboard') }}">Ranking</a>
+  <button id="whatsNewBtn" class="button" title="Novidades" type="button">
+    Novidades
+  </button>
+</div>
+
+<!-- MODAL WHATS NEW -->
+<div id="whatsNewModal" class="modal" aria-hidden="true">
+  <div class="modal-backdrop"></div>
+  <div
+    class="modal-card"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="wnTitle"
+  >
+    <header class="modal-header">
+      <h2 id="wnTitle" style="padding-top: 10px">Novidades</h2>
+      <p class="muted" id="wnVersion" style="padding-bottom: 15px"></p>
+    </header>
+    <div class="modal-body">
+      <ul id="wnList" class="wn-list"></ul>
+    </div>
+    <footer class="modal-footer">
+      <button id="wnOk" class="button">Fechar</button>
+    </footer>
   </div>
-</form>
+</div>
+
+<script>
+  // ----------- POP-UP DE NOVIDADES ----------------
+  (function () {
+    const KEY_VER = "app_version";
+    const KEY_VER_SEEN = "app_version_seen";
+    const isPreview = () =>
+      document.documentElement.hasAttribute("data-turbo-preview");
+
+    const els = {
+      wnModal: () => document.getElementById("whatsNewModal"),
+      wnOk: () => document.getElementById("wnOk"),
+      wnList: () => document.getElementById("wnList"),
+      wnVer: () => document.getElementById("wnVersion"),
+      bell: () => document.getElementById("whatsNewBtn"),
+    };
+
+    function show(el) {
+      if (el) el.hidden = false;
+    }
+    function hide(el) {
+      if (el) el.hidden = true;
+    }
+    function openModal() {
+      const m = els.wnModal();
+      if (!m) return;
+      m.setAttribute("aria-hidden", "false");
+    }
+    function closeModal() {
+      const m = els.wnModal();
+      if (!m) return;
+      m.setAttribute("aria-hidden", "true");
+    }
+
+    async function fetchVersion() {
+      try {
+        const res = await fetch("/version.json", { cache: "no-store" });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    }
+
+    function renderNotes(notes) {
+      const ul = els.wnList();
+      if (!ul) return;
+      ul.innerHTML = "";
+      (notes || []).forEach((n) => {
+        const li = document.createElement("li");
+        li.textContent = n;
+        ul.appendChild(li);
+      });
+    }
+
+    async function onPageLoad() {
+      if (isPreview()) return;
+
+      const bell = els.bell();
+      if (bell && !bell.dataset.bound) {
+        bell.addEventListener("click", openModal);
+        bell.dataset.bound = "1";
+      }
+
+      const data = await fetchVersion();
+      if (!data) return;
+
+      // Atualiza modal
+      const v = String(data.version || "");
+      if (els.wnVer()) els.wnVer().textContent = v ? `Versão ${v}` : "";
+      renderNotes(data.notes);
+
+      // Handlers únicos do modal
+      const wnOk = els.wnOk();
+
+      if (wnOk && !wnOk.dataset.bound) {
+        wnOk.addEventListener("click", () => {
+          localStorage.setItem(KEY_VER_SEEN, v);
+          closeModal();
+        });
+        wnOk.dataset.bound = "1";
+      }
+
+      // Lógica de exibição:
+      // - Se versão mudou em relação a app_version_seen, abre modal automaticamente.
+      const seen = localStorage.getItem(KEY_VER_SEEN) || "";
+      const last = localStorage.getItem(KEY_VER) || "";
+
+      if (v && v !== seen) {
+        // Pop-up automático uma vez por versão
+        openModal();
+      }
+      if (v && v !== last) {
+        localStorage.setItem(KEY_VER, v);
+      }
+    }
+
+    document.addEventListener("turbo:load", onPageLoad);
+    if (
+      document.readyState === "complete" ||
+      document.readyState === "interactive"
+    ) {
+      setTimeout(onPageLoad, 0);
+    }
+  })();
+</script>
 
 {% endblock %}

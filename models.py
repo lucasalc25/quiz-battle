@@ -1,9 +1,11 @@
 # models.py
+import os
 from sqlalchemy import (create_engine, Column, String, Text, Boolean, Integer, CHAR,
-                        CheckConstraint, text)
+                        CheckConstraint)
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import NullPool
-import os
+from sqlalchemy.orm import declarative_base
+from flask_login import UserMixin
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///quiz.db")
 
@@ -33,11 +35,18 @@ Base = declarative_base()
 
 THEMES = ('Esportes','TV/Cinema','Jogos','Música','Lógica','História','Diversos')
 
-class User(Base):
+class User(Base, UserMixin):
     __tablename__ = 'users'
-    nickname = Column(Text, primary_key=True)                 
-    has_perfect_medal = Column(Boolean, nullable=False, server_default=text("false"))
-
+    nickname = Column(String(16), primary_key=True)
+    email = Column(String(255), unique=True, nullable=True)
+    password_hash = Column(String(255), nullable=True)
+    google_id = Column(String(128), unique=True, nullable=True)
+    facebook_id = Column(String(128), unique=True, nullable=True)
+    is_active = Column(Boolean, default=True)
+    
+    def get_id(self):
+        return self.nickname
+    
 class Question(Base):
     __tablename__ = 'questions'
     id = Column(Integer, primary_key=True, autoincrement=True)

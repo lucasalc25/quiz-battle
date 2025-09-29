@@ -2,6 +2,7 @@
 Flask
 Flask-Login
 Authlib
+requests
 
 # Banco de dados
 SQLAlchemy>=2.0.32

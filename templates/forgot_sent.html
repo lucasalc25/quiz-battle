@@ -1,0 +1,13 @@
+{% extends "base.html" %} {% block content %}
+<div class="card" style="max-width: 420px; margin: auto">
+  <h2 class="card-title">Verifique seu e-mail</h2>
+  <p class="muted">
+    Se o endereço informado existir, você receberá um link para redefinir a
+    senha.
+  </p>
+  <p class="muted">Dica: olhe também a caixa de spam.</p>
+  <a href="{{ url_for('login') }}" class="button" style="margin-top: 12px"
+    >Voltar ao login</a
+  >
+</div>
+{% endblock %}

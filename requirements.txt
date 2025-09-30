@@ -1,6 +1,19 @@
-flask
-jinja2
-sqlalchemy>=2.0
-psycopg[binary]
+# Core
+Flask
+Flask-Login
+Authlib
+requests
+Flask-Mail
+
+# Banco de dados
+SQLAlchemy>=2.0.32
 psycopg2-binary
+psycopg[binary]
+
+# Utilidades
+python-dotenv
+Werkzeug
+itsdangerous
+
+# Produção
 gunicorn

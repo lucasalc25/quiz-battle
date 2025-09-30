@@ -119,35 +119,11 @@
   <body class="{{ body_class or '' }}" data-page="{{ body_class or '' }}">
     {% if body_class != "maintenance" %}
     <header id="header">
-      <!-- Estado de conta -->
+      <!-- Logo -->
       <div class="left-header">
-        <div
-          class="account"
-          style="
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-          "
-        >
-          {% if current_user.is_authenticated %}
-          <span class="muted"
-            >Olá, <strong>{{ current_user.nickname }}</strong></span
-          >
-          <form method="post" action="{{ url_for('do_logout') }}">
-            <button class="button" style="padding: 6px 15px; font-size: 0.9rem">
-              Sair
-            </button>
-          </form>
-          {% else %}
-          <a
-            class="button"
-            href="{{ url_for('login') }}"
-            style="padding: 8px 15px; font-size: 0.9rem"
-            >Entrar</a
-          >
-          {% endif %}
-        </div>
+        <a href="/" style="max-width: 90px"
+          ><img src="../static/images/logo.png" width="90px" alt="Logo Quiz"
+        /></a>
       </div>
 
       <div class="right-header">
@@ -174,15 +150,55 @@
           <source id="bgSource" src="" type="audio/mpeg" data-current="" />
         </audio>
 
-        <!-- Botão de novidades (sino) -->
-        <button
-          id="whatsNewBtn"
-          class="news-btn"
-          title="Novidades"
-          data-turbo-permanent
+        <div
+          class="account"
+          style="
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          "
         >
-          <i data-lucide="bell"></i>
-        </button>
+          {% if current_user.is_authenticated %}
+          <div
+            class="user-badge"
+            style="display: flex; gap: 10px; align-items: center"
+          >
+            {% if current_user.avatar_url %}
+            <img
+              src="{{ current_user.avatar_url }}"
+              alt="{{ current_user.nickname or current_user.email }}"
+              referrerpolicy="no-referrer"
+              style="
+                width: 42px;
+                height: 42px;
+                border-radius: 50%;
+                object-fit: cover;
+                border: 1px solid #ffffff22;
+              "
+            />
+            {% else %}
+            <div
+              style="
+                width: 42px;
+                height: 42px;
+                border-radius: 50%;
+                display: grid;
+                place-items: center;
+                background: #2b2b2b;
+                color: #ddd;
+                font-weight: bold;
+                font-size: 1.2rem;
+                border: 1px solid #ffffff22;
+              "
+            >
+              {{ (current_user.nickname or current_user.email or '?')[0]|upper
+              }}
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
       </div>
     </header>
 

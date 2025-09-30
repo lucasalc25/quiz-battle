@@ -39,6 +39,12 @@
       required
       minlength="6"
     />
+    <input
+      type="password"
+      name="confirmPassword"
+      placeholder="Repetir senha"
+      required
+    />
     <!-- Mensagens abaixo da senha (erro OU sucesso) -->
     {% if errors and errors.password %}
     <p class="form-msg error">{{ errors.password }}</p>
@@ -50,7 +56,7 @@
   </form>
 
   <p class="muted" style="margin-top: 10px">
-    Já tem conta? <a href="{{ url_for('login') }}">Entrar</a>
+    Já tem conta? <a class="login-link" href="{{ url_for('login') }}">Entrar</a>
   </p>
 </div>
 

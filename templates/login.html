@@ -1,32 +1,73 @@
 {% extends "base.html" %} {% block content %}
+
 <div class="card" style="max-width: 420px; margin: auto">
   <h2 class="card-title">Entrar</h2>
-  <div class="auth-buttons">
+
+  <div class="auth-buttons" style="margin-top: 8px">
     <a
       class="auth-button"
       href="{{ url_for('auth_google') }}"
       data-turbo="false"
-      ><img
+    >
+      <img
         class="auth-icon"
         src="https://www.svgrepo.com/show/475656/google-color.svg"
         alt="Google"
         width="24"
         height="24"
       />
-      Entrar com Google</a
-    >
+      Entrar com Google
+    </a>
   </div>
 
   <hr style="margin: 14px 0; opacity: 0.35" />
 
-  <form method="post" action="{{ url_for('login_email') }}" class="form-card">
+  <form
+    method="post"
+    action="{{ url_for('login_email') }}"
+    class="form-card"
+    data-turbo="false"
+  >
     <input type="email" name="email" placeholder="Email" required />
     <input type="password" name="password" placeholder="Senha" required />
-    <button class="button" style="margin-top: 16px">Entrar com email</button>
+
+    <label
+      class="muted"
+      style="
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 0.95rem;
+        margin-top: 4px;
+      "
+    >
+      <input type="checkbox" name="remember" value="1" /> Manter conectado
+    </label>
+
+    <button class="button" style="margin-top: 12px">Entrar com email</button>
+
+    <div style="font-size: 0.9rem">
+      <a class="login-link" href="{{ url_for('forgot_password') }}"
+        >Esqueceu a senha?</a
+      >
+    </div>
   </form>
 
   <p class="muted" style="margin-top: 10px">
-    Não tem conta? <a href="{{ url_for('register') }}">Criar agora</a>
+    Não tem conta?
+    <a class="login-link" href="{{ url_for('register') }}">Criar agora</a>
   </p>
 </div>
+
+<style>
+  .flash.ok {
+    color: #4ade80;
+  }
+  .flash.warn {
+    color: #fbbf24;
+  }
+  .flash.error {
+    color: #ff6b6b;
+  }
+</style>
 {% endblock %}

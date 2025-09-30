@@ -43,6 +43,7 @@ class User(Base, UserMixin):
     google_id = Column(String(128), unique=True, nullable=True)
     facebook_id = Column(String(128), unique=True, nullable=True)
     is_active = Column(Boolean, default=True)
+    avatar_url = Column(String(512), nullable=True)
     
     def get_id(self):
         return self.nickname

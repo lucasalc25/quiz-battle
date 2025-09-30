@@ -1,7 +1,8 @@
 :root[data-theme="light"] {
-  --bg: #f7f7f7;
+  --bg: #f9fafb;
+  --bg-header: #ffffff;
   --container: #ffffff;
-  --container-shadow: rgba(0, 0, 0, 0.3);
+  --shadow: rgba(0, 0, 0, 0.3);
   --text: #0f172a;
   --btn-label: #ffffff;
   --muted: #475569;
@@ -10,9 +11,10 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #121212;
-  --container: #202020;
-  --container-shadow: rgba(255, 255, 255, 0.3);
+  --bg: #010409;
+  --bg-header: #0d1117;
+  --container: #0d1117;
+  --shadow: rgba(255, 255, 255, 0.3);
   --text: #e5e7eb;
   --btn-label: #000000;
   --muted: #9ca3af;
@@ -53,8 +55,9 @@ li {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: var(--bg);
-  padding: 20px;
+  background: var(--bg-header);
+  box-shadow: 0 4px 8px -2px var(--shadow);
+  padding: 10px 80px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -67,29 +70,32 @@ li {
   gap: 15px;
 }
 
+main.container {
+  max-width: 350px;
+  width: 90%;
+  margin: auto;
+  padding: 20px;
+
+  border-radius: 12px;
+  background: var(--container);
+  box-shadow: 0 0 15px var(--shadow);
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
 @media (max-width: 480px) {
+  #header {
+    padding: 8px 20px;
+  }
   header#header .button,
   header#header .icon-btn {
     min-height: 40px;
     padding: 8px 12px;
     font-size: 0.95rem;
   }
-}
-
-main.container {
-  max-width: 350px;
-  width: 92%;
-  margin: auto;
-  padding: 20px;
-
-  border-radius: 12px;
-  background: var(--container);
-  box-shadow: 0 0 15px var(--container-shadow);
-
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
 }
 
 body.home main.container {
@@ -357,9 +363,9 @@ ol {
   color: var;
 }
 
-input[name="nickname"],
-input[name="email"],
-input[name="password"] {
+input[type="text"],
+input[type="email"],
+input[type="password"] {
   width: 100%;
   padding: 8px 12px;
   border-radius: 10px;
@@ -428,7 +434,7 @@ a.button {
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--text);
 }
 
 .options {
@@ -473,4 +479,14 @@ a.button {
 
 a {
   text-decoration: none;
+  color: var(--text);
+}
+
+.login-link {
+  text-decoration-line: underline;
+  text-underline-offset: 1px;
+}
+
+.login-link:hover {
+  color: var(--primary);
 }

@@ -5,8 +5,10 @@ import unicodedata
 import re
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response, flash
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
+from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from authlib.integrations.flask_client import OAuth
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import select, text, func
 from models import SessionLocal, User, Question, Leaderboard, THEMES, Base, engine
 from contextlib import contextmanager
@@ -23,30 +25,32 @@ TZ = ZoneInfo("America/Manaus")
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "28a08c230e257781ef22b1d7be9758a0")
 
-Base.metadata.create_all(engine)
-
-login_manager = LoginManager(app)
-login_manager.login_view = "login"   # rota que mostra tela de login quando exige auth
-
-# Carrega usuário por id (no nosso caso, 'nickname')
-@login_manager.user_loader
-def load_user(user_id: str):
-    with db_readonly() as db:
-        return db.get(User, user_id)
-
-# OAuth (Authlib)
-oauth = OAuth(app)
-
-# Google OpenID Connect (usa discovery)
-oauth.register(
-    name="google",
-    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_id=os.getenv("GOOGLE_CLIENT_ID"),
-    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-    client_kwargs={"scope": "openid email profile"},
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    REMEMBER_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="Lax",  # ou "None" se precisar em iframes
 )
 
-THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "Diversos"]
+app.config.setdefault("SECRET_KEY", os.getenv("SECRET_KEY", "change-me"))
+app.config["SECURITY_EMAIL_SALT"] = os.getenv("SECURITY_EMAIL_SALT", "email-salt")
+app.config["SECURITY_RESET_SALT"]  = os.getenv("SECURITY_RESET_SALT", "reset-salt")
+app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=int(os.getenv("REMEMBER_COOKIE_DURATION_DAYS", "30")))
+
+# Flask-Mail – SMTP
+app.config["MAIL_SERVER"] = os.getenv("MAIL_SERVER", "")
+app.config["MAIL_PORT"] = int(os.getenv("MAIL_PORT", "587") or 0)
+app.config["MAIL_USE_TLS"] = os.getenv("MAIL_USE_TLS", "True").lower() == "true"
+app.config["MAIL_USE_SSL"] = os.getenv("MAIL_USE_SSL", "False").lower() == "true"
+app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME", "")
+app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", "")
+app.config["MAIL_DEFAULT_SENDER"] = os.getenv("MAIL_DEFAULT_SENDER", app.config["MAIL_USERNAME"] or "nao-responda<quizbattle.suporte@gmail.com>")
+
+try:
+    mail = Mail(app) if app.config["MAIL_SERVER"] else None
+except Exception:
+    mail = None
+
+Base.metadata.create_all(engine)
 
 MAINTENANCE_MODE = os.getenv("MAINTENANCE", "0")
 
@@ -70,13 +74,15 @@ def version_json():
     Se quiser, troque o conteúdo abaixo a cada release.
     """
     payload = {
-        "version": "1.0.3",
-        "released_at": "2025-09-29 22:00-00:00",  # America/Manaus"
+        "version": "1.0.4",
+        "released_at": "2025-09-30 01:00:00",  # America/Manaus"
         "notes": [
             "Pop-up de novidades",
             "Página de manutenção",
             "Correção do reset do ranking semanal",
-            "Sistema de login e cadastro",
+            "Sistema de login e cadastro pelo Google ou por email",
+            "Recuperação de senha",
+            "Sistema de e-mails"
             "Mudanças visuais na página inicial",
         ],
         "cta": {"label": "Ver novidades", "action": "#whats-new"},
@@ -88,6 +94,30 @@ def version_json():
     resp.headers["Expires"] = "0"
     return resp
 
+login_manager = LoginManager(app)
+login_manager.login_view = "login"   # rota que mostra tela de login quando exige auth
+
+# Carrega usuário por id (no nosso caso, 'nickname')
+@login_manager.user_loader
+def load_user(user_id: str):
+    with db_readonly() as db:
+        return db.get(User, user_id)
+    
+
+# OAuth (Authlib)
+oauth = OAuth(app)
+
+# Google OpenID Connect (usa discovery)
+oauth.register(
+    name="google",
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    client_kwargs={"scope": "openid email profile"},
+)
+
+THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "Diversos"]
+
 @app.get("/login")
 def login():
     if current_user.is_authenticated:
@@ -98,6 +128,8 @@ def login():
 def login_email():
     email = (request.form.get("email") or "").strip().lower()
     password = request.form.get("password") or ""
+    remember = bool(request.form.get("remember"))
+    
     if not email or not password:
         flash("Informe email e senha.", "warn")
         return redirect(url_for("login"))
@@ -108,7 +140,7 @@ def login_email():
         flash("Credenciais inválidas.", "error")
         return redirect(url_for("login"))
 
-    login_user(user)
+    login_user(user, remember=remember)
     flash(f"Bem-vindo(a), {user.nickname}!", "ok")
     return redirect(url_for("home"))
 
@@ -122,39 +154,47 @@ def register():
 def register_post():
     nickname = (request.form.get("nickname") or "").strip()
     email    = (request.form.get("email") or "").strip().lower()
-    password = request.form.get("password") or ""
+    pw1 = (request.form.get("password") or "").strip()
+    pw2 = (request.form.get("confirmPassword") or "").strip()
 
-    errs = validate_registration(nickname, email, password)
+    if not nickname or not email or not pw1:
+        flash("Preencha todos os campos.", "warn")
+        return redirect(url_for("register"))
+
+    if len(pw1) < 6:
+        flash("A senha deve ter pelo menos 6 caracteres.", "warn")
+        return redirect(url_for("register"))
+
+    if pw1 != pw2:
+        flash("As senhas não conferem.", "warn")
+        return redirect(url_for("register"))
 
     with db_session() as db:
-        if not errs and db.get(User, nickname):
-            errs["nickname"] = "Esse nickname já está em uso."
-        if not errs and db.query(User).filter(User.email == email).first():
-            errs["email"] = "Esse email já está em uso."
+        # checar se já existe
+        exists = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+        if exists:
+            flash("Este e-mail já está cadastrado.", "error")
+            return redirect(url_for("register"))
 
-        if errs:
-            # Re-exibe o formulário com erros e valores preenchidos
-            return render_template(
-                "register.html",
-                title="Criar conta",
-                form={"nickname": nickname, "email": email},
-                errors=errs,
-                success=None
-            ), 400
-
-        # Sem erros → cria usuário
         user = User(
             nickname=nickname,
             email=email,
-            password_hash=generate_password_hash(password),
-            is_active=True,
+            password_hash=generate_password_hash(pw1),
+            # avatar_url pode ser preenchido depois (login Google) ou por foto default
         )
         db.add(user)
+        db.commit()
+        db.refresh(user)
 
-    # Já loga o usuário e manda pra home (igual Google)
-    login_user(user)
-    flash("Conta criada com sucesso!", "ok")
-    return redirect(url_for("home"))
+    # Enviar e-mail de boas-vindas (opcional)
+    try:
+        html = render_template("emails/welcome.html", nickname=nickname)
+        send_email("Bem-vindo(a) ao Quiz Battle!", [email], html)
+    except Exception:
+        pass
+
+    # Redireciona para login com modal
+    return redirect(url_for("login", notice="account_created"))
 
 # --- Google OAuth ---
 @app.get("/auth/google")
@@ -172,8 +212,10 @@ def auth_google():
 @app.get("/auth/google/callback")
 def auth_google_cb():
     try:
-        token = oauth.google.authorize_access_token()
-        userinfo = token.get("userinfo") or {}
+        _ = oauth.google.authorize_access_token()
+        resp = oauth.google.get("https://openidconnect.googleapis.com/v1/userinfo")
+        userinfo = resp.json() if resp else {}
+        app.logger.info(f"[GOOGLE] userinfo: {userinfo}")
     except Exception as e:
         app.logger.exception("Falha no OAuth Google: %s", e)
         flash("Falha ao autenticar com o Google. Tente novamente.", "error")
@@ -182,6 +224,7 @@ def auth_google_cb():
     sub = userinfo.get("sub")
     email = (userinfo.get("email") or "").lower()
     display_name = beautify_name(userinfo.get("name") or (email.split("@")[0] if email else "Jogador"))
+    picture = userinfo.get("picture")
 
     with db_session() as db:
         user = db.query(User).filter(User.google_id == sub).first()
@@ -190,7 +233,13 @@ def auth_google_cb():
 
         if not user:
             nick = unique_nickname_human(db, display_name)
-            user = User(nickname=nick, email=email, google_id=sub, is_active=True)
+            user = User(
+                nickname=nick,
+                email=email,
+                google_id=sub,
+                is_active=True,
+                avatar_url=picture,            
+            )
             db.add(user)
         else:
             if not user.google_id:
@@ -198,26 +247,91 @@ def auth_google_cb():
             if email and not user.email:
                 user.email = email
             # opcional: atualizar nickname para a versão “bonita” se hoje for vazio/padrão
-            # (comente se você preferir nunca mexer em nickname já existente)
             if user.nickname and user.nickname.lower() == (email.split("@")[0] if email else "").lower():
                 new_nick = unique_nickname_human(db, display_name)
                 user.nickname = new_nick
+            if picture:
+                user.avatar_url = picture
 
     login_user(user)
     flash(f"Olá, {user.nickname}!", "ok")
     nxt = session.pop("post_auth_next", "") or url_for("home")
     return redirect(nxt)
 
+@app.route("/forgot", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "GET":
+        return render_template("forgot_password.html", title="Esqueci minha senha")
+
+    email = (request.form.get("email") or "").strip().lower()
+    with db_session() as db:
+        user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+        print(user)
+
+    if user:
+        token = make_email_token(user, app.config["SECURITY_RESET_SALT"])
+        reset_url = url_for("reset_password", token=token, _external=True)
+        html = render_template("emails/reset_password.html",
+                            nickname=user.nickname, reset_url=reset_url)
+        send_email("Redefinir senha", [user.email], html)
+
+    flash("Se o e-mail existir, enviaremos instruções de redefinição.", "ok")
+    return render_template("forgot_sent.html", title="Verifique seu e-mail")
+
+
+@app.route("/reset/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    if request.method == "GET":
+        try:
+            load_email_token(token, app.config["SECURITY_RESET_SALT"], max_age=60*60)  # 1h
+        except SignatureExpired:
+            flash("Link expirado. Solicite novamente.", "warn")
+            return redirect(url_for("forgot_password"))
+        except BadSignature:
+            flash("Link inválido.", "error")
+            return redirect(url_for("login"))
+        return render_template("reset_password.html", token=token, title="Redefinir senha")
+
+    pw1 = request.form.get("password") or ""
+    pw2 = request.form.get("confirmPassword") or ""
+    if len(pw1) < 6 or pw1 != pw2:
+        flash("Senha inválida ou não confere.", "error")
+        return redirect(request.url)
+
+    try:
+        data = load_email_token(token, app.config["SECURITY_RESET_SALT"], max_age=60*60)
+    except Exception:
+        flash("Link inválido ou expirado.", "error")
+        return redirect(url_for("forgot_password"))
+
+    email = data.get("email")
+    with db_session() as db:
+        user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+        if not user:
+            flash("Usuário não encontrado.", "error")
+            return redirect(url_for("login"))
+        user.password_hash = generate_password_hash(pw1)
+        db.add(user)
+        db.commit()
+        try:
+            html = render_template("emails/password_changed.html", nickname=user.nickname)
+            send_email("Sua senha foi alterada", [user.email], html)
+        except Exception:
+            pass
+
+    return redirect(url_for("login", notice="reset_ok"))
+
+
 @app.post("/logout")
 def do_logout():
     logout_user()
-    session.clear()
+    for k in ("post_auth_next",):
+        session.pop(k, None)
     flash("Você saiu da conta.", "ok")
-    return redirect(url_for("login"))
+    return redirect(url_for("login", notice="logout"))
 
 
 LOWER_WORDS_PT = {"de","da","do","das","dos","e"}
-
 
 def beautify_name(name: str) -> str:
     """Normaliza acentos (NFC), espaçamentos e capitaliza iniciais em PT-BR."""
@@ -250,7 +364,6 @@ def unique_nickname_human(db, base_name: str) -> str:
             return cand
         i += 1
 
-
 def next_monday_midnight(dt: datetime | None = None) -> datetime:
     now = dt or datetime.now(TZ)
     days_ahead = (7 - now.weekday()) % 7
@@ -274,6 +387,29 @@ def _maybe_reset_week(db):
             meta.value = cur
         else:
             db.add(Meta(key="last_reset_week", value=cur))
+            
+
+def _ts(salt: str) -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt=salt)
+
+def make_email_token(user, salt: str):
+    return _ts(salt).dumps({"email": user.email})
+
+def load_email_token(token: str, salt: str, max_age: int = 3600):
+    return _ts(salt).loads(token, max_age=max_age)
+
+def send_email(subject: str, recipients: list[str], html: str, text: str = None):
+    """Tenta enviar com Flask-Mail; se não houver SMTP, loga o conteúdo."""
+    if mail and app.config["MAIL_SERVER"]:
+        try:
+            msg = Message(subject, recipients=recipients, html=html, body=text or "")
+            mail.send(msg)
+            return True
+        except Exception as e:
+            app.logger.error(f"[MAIL] Falha: {e}")
+    # Fallback: loga o “e-mail”
+    app.logger.info(f"[MAIL-FAKE] To={recipients} | Subject={subject}\n{html}")
+    return False
 
 
 @contextmanager
@@ -620,7 +756,6 @@ def end():
     return render_template("end.html",
                            score=score, perfect=(score >= 50),
                            reason=reason, title="Fim da partida", body_class="end")
-
 
 
 @app.get("/leaderboard")

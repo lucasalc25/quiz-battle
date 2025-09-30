@@ -1,25 +1,5 @@
 {% extends "base.html" %}{% block content %}
 
-<img
-  src="../static/images/logo.png"
-  width="160px"
-  style="margin-bottom: 40px"
-  alt="Logo Quiz"
-/>
-
-<div class="buttons">
-  <form method="post" action="{{ url_for('start') }}" data-turbo="false">
-    <button class="button" style="width: 100%; min-width: 130px">
-      Iniciar
-    </button>
-  </form>
-
-  <a class="button" href="{{ url_for('leaderboard') }}">Ranking</a>
-  <button id="whatsNewBtn" class="button" title="Novidades" type="button">
-    Novidades
-  </button>
-</div>
-
 <!-- MODAL WHATS NEW -->
 <div id="whatsNewModal" class="modal" aria-hidden="true">
   <div class="modal-backdrop"></div>
@@ -40,6 +20,25 @@
       <button id="wnOk" class="button">Fechar</button>
     </footer>
   </div>
+</div>
+
+<h2 class="card-title">Bem-vindo</h2>
+
+<div class="buttons">
+  <form method="post" action="{{ url_for('start') }}" data-turbo="false">
+    <button class="button" style="width: 100%; min-width: 130px">
+      Iniciar
+    </button>
+  </form>
+
+  <a class="button" href="{{ url_for('leaderboard') }}">Ranking</a>
+  <button id="whatsNewBtn" class="button" title="Novidades" type="button">
+    Novidades
+  </button>
+
+  <form method="post" action="{{ url_for('do_logout') }}" data-turbo="false">
+    <button class="button" style="width: 100%; min-width: 130px">Sair</button>
+  </form>
 </div>
 
 <script>

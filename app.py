@@ -3,6 +3,7 @@ import random, os
 import secrets
 import unicodedata
 import re
+import threading
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response, flash
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
@@ -16,6 +17,7 @@ from models import Meta
 from zoneinfo import ZoneInfo
 from datetime import datetime, time, timedelta
 from dotenv import load_dotenv
+import time
 
 
 load_dotenv() 
@@ -172,6 +174,7 @@ def register_post():
             flash("Este e-mail já está cadastrado.", "error")
             return redirect(url_for("register"))
 
+        t0 = time.perf_counter()
         user = User(
             nickname=nickname,
             email=email,
@@ -181,14 +184,21 @@ def register_post():
         db.add(user)
         db.commit()
         db.refresh(user)
+        t1 = time.perf_counter()
 
     # Enviar e-mail de boas-vindas (opcional)
     try:
         html = render_template("emails/welcome.html", nickname=nickname)
+        t2 = time.perf_counter()
         send_email("Bem-vindo(a) ao Quiz Battle!", [email], html)
+        t3 = time.perf_counter()
     except Exception:
         pass
-
+    
+    app.logger.info(
+    "[PERF register] db=%.0fms, render=%.0fms, email=%.0fms, total=%.0fms",
+    (t1-t0)*1000, (t2-t1)*1000, (t3-t2)*1000, (t3-t0)*1000
+)
     # Redireciona para login com modal
     return redirect(url_for("login", notice="account_created"))
 

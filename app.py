@@ -3,8 +3,10 @@ import random, os
 import secrets
 import unicodedata
 import re
+import json
+import requests
 import threading
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response, flash
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response, flash, copy_current_request_context
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -53,6 +55,17 @@ except Exception:
     mail = None
 
 Base.metadata.create_all(engine)
+
+# “Aquecimento” do pool no startup
+def warmup_db():
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("SELECT 1")
+    except Exception as e:
+        app.logger.warning(f"[DB warmup] {e}")
+
+# após criar app/engine
+warmup_db()
 
 MAINTENANCE_MODE = os.getenv("MAINTENANCE", "0")
 
@@ -151,7 +164,7 @@ def register():
 @app.post("/register")
 def register_post():
     nickname = (request.form.get("nickname") or "").strip()
-    email    = (request.form.get("email") or "").strip().lower()
+    email = (request.form.get("email") or "").strip().lower()
     pw1 = (request.form.get("password") or "").strip()
     pw2 = (request.form.get("confirmPassword") or "").strip()
 
@@ -186,18 +199,24 @@ def register_post():
         db.refresh(user)
         t1 = time.perf_counter()
 
-    # Enviar e-mail de boas-vindas (opcional)
-    try:
         html = render_template("emails/welcome.html", nickname=nickname)
+
         t2 = time.perf_counter()
-        send_email("Bem-vindo(a) ao Quiz Battle!", [email], html)
-        t3 = time.perf_counter()
-    except Exception:
-        pass
+
+        # Enviar e-mail de boas-vindas
+        @copy_current_request_context
+        def _fire_email(to_email, html_body):
+            try:
+                send_email("Bem-vindo(a) ao Quiz Battle!", [to_email], html_body)
+            except Exception as e:
+                app.logger.error(f"[MAIL-ASYNC] Falha ao enviar: {e}")
+
+
+    threading.Thread(target=_fire_email, args=(email, html), daemon=True).start()
     
     app.logger.info(
-    "[PERF register] db=%.0fms, render=%.0fms, email=%.0fms, total=%.0fms",
-    (t1-t0)*1000, (t2-t1)*1000, (t3-t2)*1000, (t3-t0)*1000
+    "[PERF register] db=%.0fms, render=%.0fms, total=%.0fms",
+    (t1-t0)*1000, (t2-t1)*1000,(t2-t0)*1000
 )
     # Redireciona para login com modal
     return redirect(url_for("login", notice="account_created"))
@@ -404,17 +423,64 @@ def make_email_token(user, salt: str):
 def load_email_token(token: str, salt: str, max_age: int = 3600):
     return _ts(salt).loads(token, max_age=max_age)
 
-def send_email(subject: str, recipients: list[str], html: str, text: str = None):
-    """Tenta enviar com Flask-Mail; se não houver SMTP, loga o conteúdo."""
-    if mail and app.config["MAIL_SERVER"]:
+def _html_to_text(html: str) -> str:
+    # fallback simples para gerar text/plain
+    text = re.sub(r"<br\s*/?>", "\n", html or "", flags=re.I)
+    text = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+def send_email(subject: str, recipients: list[str], html: str, text: str = None) -> bool:
+    # 1) Preferir BREVO API (HTTPS) se a chave existir
+    api_key = os.getenv("BREVO_API_KEY", "").strip()
+    if api_key:
         try:
-            msg = Message(subject, recipients=recipients, html=html, body=text or "")
+            sender_email = app.config.get("MAIL_DEFAULT_SENDER") or os.getenv("MAIL_USERNAME", "")
+            payload = {
+                "sender": {"email": sender_email},
+                "to": [{"email": r} for r in recipients],
+                "subject": subject,
+                "htmlContent": html or "",
+                "textContent": text or _html_to_text(html or ""),
+            }
+            resp = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={
+                    "api-key": api_key,
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                },
+                data=json.dumps(payload),
+                timeout=8,
+            )
+            if 200 <= resp.status_code < 300:
+                return True
+            app.logger.error(f"[MAIL-BREVO] {resp.status_code} {resp.text}")
+        except Exception as e:
+            app.logger.error(f"[MAIL-BREVO] Falha: {e}")
+
+    # 2) Fallback: Flask-Mail/SMTP (útil no local ou se Railway Pro liberar SMTP)
+    if mail and app.config.get("MAIL_SERVER"):
+        try:
+            msg = Message(
+                subject,
+                recipients=recipients,
+                html=html,
+                body=text or _html_to_text(html or ""),
+            )
+            # garantir nome amigável do remetente
+            sender_email = app.config.get("MAIL_DEFAULT_SENDER") or app.config.get("MAIL_USERNAME")
+            if sender_email:
+                msg.sender = (sender_email)
             mail.send(msg)
             return True
         except Exception as e:
             app.logger.error(f"[MAIL] Falha: {e}")
-    # Fallback: loga o “e-mail”
-    app.logger.info(f"[MAIL-FAKE] To={recipients} | Subject={subject}\n{html}")
+
+    # 3) Dev: fallback para log
+    if app.debug:
+        app.logger.info(f"[MAIL-FAKE] To={recipients} | Subject={subject}\n{html}")
+        return True
+
     return False
 
 

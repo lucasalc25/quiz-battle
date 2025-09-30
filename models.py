@@ -21,11 +21,12 @@ def make_engine(url: str):
     # Postgres (Neon): pool pequeno e pre_ping
     return create_engine(
         url,
-        pool_size=int(os.getenv("DB_POOL_SIZE", "3")),
-        max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "2")),
+        pool_size=int(os.getenv("DB_POOL_SIZE", "5  ")),
+        max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "5")),
         pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
         pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
         pool_pre_ping=True,
+        pool_use_lifo=True,
         future=True,
     )
 

@@ -69,10 +69,6 @@ def maintenance():
 
 @app.get("/version.json")
 def version_json():
-    """
-    Retorna metadados de versão do app para o banner e pop-up automático.
-    Se quiser, troque o conteúdo abaixo a cada release.
-    """
     payload = {
         "version": "1.0.4",
         "released_at": "2025-09-30 01:00:00",  # America/Manaus"
@@ -82,7 +78,7 @@ def version_json():
             "Correção do reset do ranking semanal",
             "Sistema de login e cadastro pelo Google ou por email",
             "Recuperação de senha",
-            "Sistema de e-mails"
+            "Sistema de e-mails",
             "Mudanças visuais na página inicial",
         ],
         "cta": {"label": "Ver novidades", "action": "#whats-new"},
@@ -199,8 +195,8 @@ def register_post():
 # --- Google OAuth ---
 @app.get("/auth/google")
 def auth_google():
-    redirect_uri = url_for("auth_google_cb", _external=True)
-    # Cria o redirect e, ANTES de retornar, loga as chaves da sessão
+    session["post_auth_next"] = request.args.get("next", "")
+    redirect_uri = url_for("auth_google_cb", _external=True, _scheme="https")
     resp = oauth.google.authorize_redirect(redirect_uri)
     try:
         app.logger.info("SESSION KEYS BEFORE REDIRECT: %s", list(session.keys()))

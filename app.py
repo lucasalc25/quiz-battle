@@ -68,19 +68,62 @@ def warmup_db():
 # após criar app/engine
 warmup_db()
 
-MAINTENANCE_MODE = os.getenv("MAINTENANCE", "0")
+MAINTENANCE_COOKIE = "preview_ok"
+
+def _has_preview_cookie():
+    return request.cookies.get(MAINTENANCE_COOKIE) == os.getenv("PREVIEW_TOKEN", "")
 
 @app.before_request
-def check_maintenance():
-    if MAINTENANCE_MODE == "1" and request.path != "/maintenance":
-        return redirect(url_for("maintenance"))
+def maintenance_gate():
+    # ligue/desligue pelo env
+    if os.getenv("MAINTENANCE_MODE", "False").lower() != "true":
+        return
 
+    # endpoints livres (assets/health/callback OAuth etc.)
+    allowed = {
+        "static",
+        "healthcheck",            # se você tiver
+        "auth_google",            # sua rota de iniciar OAuth, se quiser liberar
+        "auth_google_cb",         # callback OAuth (às vezes precisa liberar)
+        "__preview_on",
+        "__preview_off",
+    }
+    if request.endpoint in allowed:
+        return
 
-@app.get("/maintenance")
-def maintenance():
-    return render_template("maintenance.html",
-                           title="Em atualização",
-                           body_class="maintenance"), 503
+    # se você tiver login/admin e quiser se autenticar antes de liberar:
+    # from flask_login import current_user
+    # if current_user.is_authenticated and current_user.is_admin: return
+
+    # passe de preview por cookie secreto
+    if _has_preview_cookie():
+        return
+
+    # caso contrário: mostra manutenção
+    return render_template("maintenance.html"), 503
+
+@app.get("/__preview_on")
+def __preview_on():
+    token = request.args.get("token", "")
+    if token and token == os.getenv("PREVIEW_TOKEN", ""):
+        resp = make_response(redirect(url_for("home")))
+        # cookie seguro; em dev local pode tirar "secure=True"
+        resp.set_cookie(
+            MAINTENANCE_COOKIE,
+            token,
+            max_age=3600*6,   # 6h de passe
+            httponly=True,
+            secure=True,
+            samesite="Lax",
+        )
+        return resp
+    return "Token inválido", 403
+
+@app.get("/__preview_off")
+def __preview_off():
+    resp = make_response(redirect(url_for("login")))
+    resp.delete_cookie(MAINTENANCE_COOKIE)
+    return resp
 
 
 @app.get("/version.json")
@@ -454,7 +497,7 @@ def send_email(subject: str, recipients: list[str], html: str, text: str = None)
                 "htmlContent": html or "",
                 "textContent": text or (re.sub("<[^>]+>", "", html or "") if html else ""),
             }
-            if name:  # opcional
+            if name:
                 payload["sender"]["name"] = name
 
             resp = requests.post(
@@ -464,7 +507,7 @@ def send_email(subject: str, recipients: list[str], html: str, text: str = None)
                     "accept": "application/json",
                     "content-type": "application/json",
                 },
-                json=payload,  # use json= em vez de data=json.dumps(...)
+                json=payload,
                 timeout=8,
             )
             if 200 <= resp.status_code < 300:
@@ -482,7 +525,6 @@ def send_email(subject: str, recipients: list[str], html: str, text: str = None)
                 html=html,
                 body=text or (re.sub("<[^>]+>", "", html or "") if html else ""),
             )
-            # aqui pode ser "Nome <email>" ou só email — Flask-Mail aceita
             sender_str = os.getenv("MAIL_DEFAULT_SENDER", "") or os.getenv("MAIL_USERNAME", "")
             if sender_str:
                 msg.sender = sender_str

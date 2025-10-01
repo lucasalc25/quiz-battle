@@ -9,6 +9,7 @@ import threading
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response, flash, copy_current_request_context
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
+from email.utils import parseaddr
 from werkzeug.security import generate_password_hash, check_password_hash
 from authlib.integrations.flask_client import OAuth
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -429,19 +430,33 @@ def _html_to_text(html: str) -> str:
     text = re.sub(r"<[^>]+>", "", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
+def _parse_sender(sender_str: str):
+    # aceita "Nome <email@dominio>" ou só "email@dominio"
+    name, email = None, None
+    if sender_str:
+        n, e = parseaddr(sender_str)
+        name = n or None
+        email = (e or sender_str).strip()
+    return name, email
+
 def send_email(subject: str, recipients: list[str], html: str, text: str = None) -> bool:
-    # 1) Preferir BREVO API (HTTPS) se a chave existir
+    # 1) Preferir BREVO API (HTTPS) se houver chave
     api_key = os.getenv("BREVO_API_KEY", "").strip()
     if api_key:
         try:
-            sender_email = app.config.get("MAIL_DEFAULT_SENDER") or os.getenv("MAIL_USERNAME", "")
+            name, email = _parse_sender(os.getenv("MAIL_DEFAULT_SENDER", "") or os.getenv("MAIL_USERNAME", ""))
+            if not email:
+                raise RuntimeError("MAIL_DEFAULT_SENDER não configurado para API Brevo")
             payload = {
-                "sender": {"email": sender_email},
+                "sender": {"email": email},
                 "to": [{"email": r} for r in recipients],
                 "subject": subject,
                 "htmlContent": html or "",
-                "textContent": text or _html_to_text(html or ""),
+                "textContent": text or (re.sub("<[^>]+>", "", html or "") if html else ""),
             }
+            if name:  # opcional
+                payload["sender"]["name"] = name
+
             resp = requests.post(
                 "https://api.brevo.com/v3/smtp/email",
                 headers={
@@ -449,7 +464,7 @@ def send_email(subject: str, recipients: list[str], html: str, text: str = None)
                     "accept": "application/json",
                     "content-type": "application/json",
                 },
-                data=json.dumps(payload),
+                json=payload,  # use json= em vez de data=json.dumps(...)
                 timeout=8,
             )
             if 200 <= resp.status_code < 300:
@@ -458,25 +473,25 @@ def send_email(subject: str, recipients: list[str], html: str, text: str = None)
         except Exception as e:
             app.logger.error(f"[MAIL-BREVO] Falha: {e}")
 
-    # 2) Fallback: Flask-Mail/SMTP (útil no local ou se Railway Pro liberar SMTP)
+    # 2) Fallback: SMTP (Flask-Mail)
     if mail and app.config.get("MAIL_SERVER"):
         try:
             msg = Message(
                 subject,
                 recipients=recipients,
                 html=html,
-                body=text or _html_to_text(html or ""),
+                body=text or (re.sub("<[^>]+>", "", html or "") if html else ""),
             )
-            # garantir nome amigável do remetente
-            sender_email = app.config.get("MAIL_DEFAULT_SENDER") or app.config.get("MAIL_USERNAME")
-            if sender_email:
-                msg.sender = (sender_email)
+            # aqui pode ser "Nome <email>" ou só email — Flask-Mail aceita
+            sender_str = os.getenv("MAIL_DEFAULT_SENDER", "") or os.getenv("MAIL_USERNAME", "")
+            if sender_str:
+                msg.sender = sender_str
             mail.send(msg)
             return True
         except Exception as e:
             app.logger.error(f"[MAIL] Falha: {e}")
 
-    # 3) Dev: fallback para log
+    # 3) Dev: log
     if app.debug:
         app.logger.info(f"[MAIL-FAKE] To={recipients} | Subject={subject}\n{html}")
         return True

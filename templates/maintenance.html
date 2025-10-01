@@ -1,7 +1,10 @@
 {% extends "base.html" %}{% block content %}
 
-<h1>🚧 Em atualização 🚧</h1>
-<p>O quiz está passando por melhorias no momento.</p>
+<i
+  class="fa-solid fa-triangle-exclamation fa-bounce fa-9x"
+  style="color: #ffd43b; padding: 40px 20px"
+></i>
+<p>A plataforma está passando por melhorias no momento.</p>
 <p>Tente novamente em alguns minutos.</p>
 
 <style>
@@ -28,14 +31,14 @@
   }
 
   body.maintenance .container {
-    max-width: 720px;
+    max-width: 520px;
     width: 92%;
     margin: auto;
-    padding: 20px;
+    padding: 40px;
+    box-shadow: 0 0 15px var(--shadow);
 
     border-radius: 12px;
     background: var(--container);
-    box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
 
     display: flex;
     flex-direction: column;

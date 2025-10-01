@@ -101,16 +101,19 @@ main.container {
 body.home main.container {
   padding-bottom: 40px;
   text-align: center;
+  box-shadow: 0 0 15px var(--shadow);
 }
 
 body.rank main.container {
   max-width: 420px;
   text-align: center;
+  box-shadow: 0 0 15px var(--shadow);
 }
 
 body.home .container form label {
   font-weight: bold;
   font-size: 1.1rem;
+  box-shadow: 0 0 15px var(--shadow);
 }
 
 p {

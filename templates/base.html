@@ -119,90 +119,393 @@
   <body class="{{ body_class or '' }}" data-page="{{ body_class or '' }}">
     {% if body_class != "maintenance" %}
     <header id="header">
-      <!-- Logo -->
-      <div class="left-header">
-        <a href="/" style="max-width: 90px"
-          ><img src="../static/images/logo.png" width="90px" alt="Logo Quiz"
-        /></a>
-      </div>
+      <div class="header-wrap">
+        <!-- Logo -->
+        <div class="logo-wrap">
+          <a href="/"
+            ><img
+              src="../static/images/logo-quinity.png"
+              width="120px"
+              alt="Logo Quiz"
+          /></a>
+        </div>
 
-      <div class="right-header">
-        <button
-          id="themeBtn"
-          class="theme-btn"
-          title="Alternar tema"
-          data-turbo-permanent
-        >
-          <i data-lucide="sun"></i>
-        </button>
-
-        <!-- Botão de mute/unmute -->
-        <button
-          id="muteBtn"
-          class="mute-btn"
-          aria-label="Alternar som"
-          data-turbo-permanent
-        >
-          <i data-lucide="volume-x"></i>
-        </button>
-
-        <audio id="bgMusic" autoplay loop muted data-turbo-permanent>
-          <source id="bgSource" src="" type="audio/mpeg" data-current="" />
-        </audio>
-
-        <div
-          class="account"
-          style="
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-          "
-        >
-          {% if current_user.is_authenticated %}
-          <div
-            class="user-badge"
-            style="display: flex; gap: 10px; align-items: center"
-          >
-            {% if current_user.avatar_url %}
-            <img
-              src="{{ current_user.avatar_url }}"
-              alt="{{ current_user.nickname or current_user.email }}"
-              referrerpolicy="no-referrer"
-              style="
-                width: 42px;
-                height: 42px;
-                border-radius: 50%;
-                object-fit: cover;
-                border: 1px solid #ffffff22;
-              "
+        <div class="search-area">
+          <form action="{{ url_for('home') }}" method="get" class="search-bar">
+            <i data-lucide="search"></i>
+            <input
+              type="text"
+              name="q"
+              placeholder="Buscar quiz, membro, "
+              value="{{ request.args.get('q','') if request else '' }}"
+              autocomplete="off"
             />
-            {% else %}
-            <div
-              style="
-                width: 42px;
-                height: 42px;
-                border-radius: 50%;
-                display: grid;
-                place-items: center;
-                background: #2b2b2b;
-                color: #ddd;
-                font-weight: bold;
-                font-size: 1.2rem;
-                border: 1px solid #ffffff22;
-              "
+          </form>
+        </div>
+
+        <div class="search-btn-wrap">
+          <button
+            id="searchToggle"
+            class="action-btn search-toggle"
+            title="Buscar"
+          >
+            <i data-lucide="search"></i>
+          </button>
+        </div>
+
+        <div class="header-actions">
+          <nav class="primary-nav">
+            <a href="{{ url_for('home') }}" class="nav-link">Início</a>
+            <a href="{{ url_for('home') }}#ranking" class="nav-link">Ranking</a>
+            <a href="{{ url_for('home') }}#criar" class="nav-link">Criar</a>
+            <a href="{{ url_for('home') }}#explorar" class="nav-link"
+              >Explorar</a
             >
-              {{ (current_user.nickname or current_user.email or '?')[0]|upper
-              }}
-            </div>
-            {% endif %}
+          </nav>
+
+          <!-- Botão de Tema -->
+          <button
+            id="themeBtn"
+            class="action-btn"
+            title="Alternar tema"
+            data-turbo-permanent
+          >
+            <i data-lucide="sun"></i>
+          </button>
+
+          <!-- Botão de mute/unmute -->
+          <button
+            id="muteBtn"
+            class="action-btn"
+            aria-label="Alternar som"
+            data-turbo-permanent
+          >
+            <i data-lucide="volume-x"></i>
+          </button>
+
+          <audio id="bgMusic" autoplay loop muted data-turbo-permanent>
+            <source id="bgSource" src="" type="audio/mpeg" data-current="" />
+          </audio>
+        </div>
+
+        <button
+          id="notifyBtnMobile"
+          class="action-btn notify-mobile"
+          title="Notificações"
+        >
+          <i data-lucide="bell"></i>
+        </button>
+
+        <button
+          id="mobileMenuBtn"
+          class="action-btn hamburger"
+          aria-label="Menu"
+        >
+          <i data-lucide="menu"></i>
+        </button>
+
+        <!-- Avatar -->
+        {% if current_user.is_authenticated %}
+        <a href="{{ url_for('home') }}" class="user-badge">
+          {% if current_user.avatar_url %}
+          <img
+            src="{{ current_user.avatar_url }}"
+            alt="{{ current_user.nickname or current_user.email }}"
+            referrerpolicy="no-referrer"
+          />
+          {% else %}
+          <div class="user-placeholder">
+            {{ (current_user.nickname or current_user.email or '?')[0]|upper }}
           </div>
           {% endif %}
-        </div>
+          <i class="user-caret" data-lucide="chevron-down"></i>
+        </a>
+        {% endif %}
       </div>
     </header>
 
+    <div id="searchPanel" class="search-panel">
+      <form
+        action="{{ url_for('home') }}"
+        method="get"
+        class="search-bar search-bar--panel"
+      >
+        <i data-lucide="search"></i>
+        <input
+          type="text"
+          name="q"
+          placeholder="Buscar quizzes, temas, criadores…"
+          value="{{ request.args.get('q','') if request else '' }}"
+          autocomplete="off"
+        />
+      </form>
+    </div>
+
+    <!-- MENU MOBILE (dropdown) -->
+    <div id="mobileMenu" class="mobile-menu" aria-hidden="true">
+      <a class="menu-item" href="{{ url_for('home') }}"
+        ><i data-lucide="home"></i><span>Início</span></a
+      >
+      <a class="menu-item" href="{{ url_for('home') }}#criar"
+        ><i data-lucide="plus-circle"></i><span>Criar</span></a
+      >
+      <a class="menu-item" href="{{ url_for('home') }}#ranking"
+        ><i data-lucide="trophy"></i><span>Ranking</span></a
+      >
+      <a class="menu-item" href="{{ url_for('home') }}#explorar"
+        ><i data-lucide="compass"></i><span>Explorar</span></a
+      >
+      <hr />
+      <button class="menu-item" data-action="notify">
+        <i data-lucide="bell"></i><span>Notificações</span>
+      </button>
+      <button id="themeMenuBtn" class="menu-item" data-action="theme">
+        <i data-lucide="sun"></i>
+      </button>
+      <button id="muteMenuBtn" class="menu-item" data-action="audio">
+        <i data-lucide="volume-x"></i>
+      </button>
+    </div>
+
     <script>
+      // ----------- BARRA DE PESQUISA EXPANSÍVEL ----------------
+      (function () {
+        function bindSearchToggle() {
+          const btn = document.getElementById("searchToggle");
+          const panel = document.getElementById("searchPanel");
+          if (!btn || !panel) return;
+
+          function openPanel() {
+            panel.classList.add("open");
+            // foco no input ao abrir
+            const input = panel.querySelector('input[name="q"]');
+            setTimeout(() => input && input.focus(), 10);
+          }
+          function closePanel() {
+            panel.classList.remove("open");
+          }
+
+          // toggle
+          if (!btn.dataset.bound) {
+            btn.addEventListener("click", (e) => {
+              e.preventDefault();
+              panel.classList.contains("open") ? closePanel() : openPanel();
+            });
+            btn.dataset.bound = "1";
+          }
+
+          // fechar ao clicar fora
+          document.addEventListener("click", (e) => {
+            if (!panel.classList.contains("open")) return;
+            const withinPanel =
+              panel.contains(e.target) || btn.contains(e.target);
+            if (!withinPanel) closePanel();
+          });
+
+          // ESC fecha
+          document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") closePanel();
+          });
+
+          // navegar (Turbo) fecha
+          document.addEventListener("turbo:before-visit", closePanel);
+
+          // re-render ícones lucide se necessário
+          if (window.lucide)
+            try {
+              lucide.createIcons();
+            } catch (_) {}
+        }
+
+        document.addEventListener("turbo:load", bindSearchToggle);
+        if (
+          document.readyState === "complete" ||
+          document.readyState === "interactive"
+        ) {
+          setTimeout(bindSearchToggle, 0);
+        }
+      })();
+
+      // ----------- MENU MOBILE EXPANSÍVEL ----------------
+      (function () {
+        function bindMobileMenu() {
+          const btn = document.getElementById("mobileMenuBtn");
+          const menu = document.getElementById("mobileMenu");
+          if (!btn || !menu) return;
+
+          const notifyBtn = document.getElementById("notifyBtn");
+          const themeBtn = document.getElementById("themeBtn");
+          const audioBtn = document.getElementById("muteBtn");
+
+          function openMenu() {
+            menu.classList.add("open");
+            menu.setAttribute("aria-hidden", "false");
+          }
+          function closeMenu() {
+            menu.classList.remove("open");
+            menu.setAttribute("aria-hidden", "true");
+          }
+          function toggleMenu(e) {
+            e && e.preventDefault();
+            menu.classList.contains("open") ? closeMenu() : openMenu();
+          }
+
+          // toggle
+          if (!btn.dataset.bound) {
+            btn.addEventListener("click", toggleMenu);
+            btn.dataset.bound = "1";
+          }
+
+          // clique fora fecha
+          document.addEventListener("click", (e) => {
+            if (!menu.classList.contains("open")) return;
+            const inside = menu.contains(e.target) || btn.contains(e.target);
+            if (!inside) closeMenu();
+          });
+
+          // ações do menu disparam botões originais
+          menu.querySelectorAll(".menu-item[data-action]").forEach((el) => {
+            el.addEventListener("click", (e) => {
+              const act = el.getAttribute("data-action");
+              if (act === "notify" && notifyBtn) notifyBtn.click();
+              if (act === "theme" && themeBtn) themeBtn.click();
+              if (act === "audio" && audioBtn) audioBtn.click();
+              closeMenu();
+            });
+          });
+
+          // ESC fecha / navegação fecha
+          document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") closeMenu();
+          });
+          document.addEventListener("turbo:before-visit", closeMenu);
+
+          // lucide icons
+          if (window.lucide)
+            try {
+              lucide.createIcons();
+            } catch (_) {}
+        }
+
+        document.addEventListener("turbo:load", bindMobileMenu);
+        if (
+          document.readyState === "complete" ||
+          document.readyState === "interactive"
+        ) {
+          setTimeout(bindMobileMenu, 0);
+        }
+      })();
+
+      (function () {
+        // Utilitário: re-render dos ícones Lucide após alterar o HTML
+        function paintIcons() {
+          if (window.lucide)
+            try {
+              lucide.createIcons();
+            } catch (_) {}
+        }
+
+        // === THEME ICON (sun/moon) ===
+        function getTheme() {
+          return localStorage.getItem("theme") || "dark";
+        }
+        function setThemeIcon(theme) {
+          const themeBtn = document.getElementById("themeBtn");
+          if (themeBtn) {
+            // regra: light => moon ; dark => sun
+            themeBtn.innerHTML =
+              theme === "light"
+                ? '<i data-lucide="moon"></i>'
+                : '<i data-lucide="sun"></i>';
+          }
+
+          const mobileItemIcon = document.querySelector("#themeMenuBtn");
+          if (mobileItemIcon) {
+            mobileItemIcon.innerHTML =
+              theme === "light"
+                ? '<i data-lucide="moon"></i><span>Tema</span>'
+                : '<i data-lucide="sun"></i><span>Tema</span>';
+          }
+          paintIcons();
+        }
+
+        // já existe seu controle de tema; só pluga o ícone
+        document.addEventListener("turbo:load", () => setThemeIcon(getTheme()));
+
+        // Se seu código de tema trocar o localStorage, chame setThemeIcon(newTheme) lá também.
+        // Exemplo (se quiser amarrar aqui):
+        const themeBtn = document.getElementById("themeBtn");
+        if (themeBtn && !themeBtn.dataset.bound) {
+          themeBtn.addEventListener("click", () => {
+            const now = getTheme() === "dark" ? "light" : "dark";
+            localStorage.setItem("theme", now);
+            document.documentElement.dataset.theme = now;
+            setThemeIcon(now);
+          });
+          themeBtn.dataset.bound = "1";
+        }
+
+        // === AUDIO ICON (mute/unmute) ===
+        function setAudioIcon() {
+          const btn = document.getElementById("muteBtn");
+          const audio = document.getElementById("bgMusic");
+          if (btn || audio) {
+            // regra: desmutado => volume-2 ; mutado => volume-x
+            btn.innerHTML = audio.muted
+              ? '<i data-lucide="volume-x"></i>'
+              : '<i data-lucide="volume-2"></i>';
+          }
+
+          const mobileItemIcon = document.querySelector("#muteMenuBtn");
+          if (mobileItemIcon || audio) {
+            mobileItemIcon.innerHTML = audio.muted
+              ? '<i data-lucide="volume-x"></i><span>Áudio</span>'
+              : '<i data-lucide="volume-2"></i><span>Áudio</span>';
+          }
+          paintIcons();
+        }
+        // Observa mudanças de mute
+        const audio = document.getElementById("bgMusic");
+        if (audio) {
+          audio.addEventListener("volumechange", setAudioIcon);
+          // alguns navegadores não disparam 'volumechange' para 'muted', então:
+          setInterval(setAudioIcon, 600);
+        }
+        // E amarra o clique do botão
+        const muteBtn = document.getElementById("muteBtn");
+        if (muteBtn && audio && !muteBtn.dataset.bound) {
+          muteBtn.addEventListener("click", () => {
+            audio.muted = !audio.muted;
+            localStorage.setItem("muted", audio.muted ? "1" : "0");
+            if (!audio.muted) audio.play().catch(() => {});
+            setAudioIcon();
+          });
+          muteBtn.dataset.bound = "1";
+        }
+        document.addEventListener("turbo:load", setAudioIcon);
+
+        // === NOTIFICAÇÕES: botão mobile dispara o desktop ===
+        const notifyBtn = document.getElementById("notifyBtn"); // header (desktop)
+        const notifyBtnMobile = document.getElementById("notifyBtnMobile"); // novo (mobile)
+        if (notifyBtn && notifyBtnMobile && !notifyBtnMobile.dataset.bound) {
+          notifyBtnMobile.addEventListener("click", (e) => {
+            e.preventDefault();
+            // dispare a mesma ação do desktop (ex.: abrir dropdown/notificações)
+            notifyBtn.click();
+          });
+          notifyBtnMobile.dataset.bound = "1";
+        }
+
+        // Re-pinta ícones lucide no load inicial
+        document.addEventListener("turbo:load", paintIcons);
+        if (
+          document.readyState === "complete" ||
+          document.readyState === "interactive"
+        ) {
+          setTimeout(paintIcons, 0);
+        }
+      })();
+
       // ----------- CONTROLE DE AUDIO ----------------
       (function () {
         // ==== chaves de storage ====

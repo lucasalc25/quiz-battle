@@ -6,7 +6,7 @@ import re
 import json
 import requests
 import threading
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response, flash, copy_current_request_context
+from flask import Flask, current_app, render_template, request, redirect, url_for, session, jsonify, make_response, flash, copy_current_request_context
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
 from email.utils import parseaddr
@@ -57,6 +57,24 @@ except Exception:
 
 Base.metadata.create_all(engine)
 
+# OAuth (Authlib)
+oauth = OAuth(app)
+
+# Google OpenID Connect (usa discovery)
+oauth.register(
+    name="google",
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    client_kwargs={"scope": "openid email profile"},
+)
+
+THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "Diversos"]
+
+LOWER_WORDS_PT = {"de","da","do","das","dos","e"}
+
+MAINTENANCE_COOKIE = "preview_ok"
+
 # “Aquecimento” do pool no startup
 def warmup_db():
     try:
@@ -68,10 +86,143 @@ def warmup_db():
 # após criar app/engine
 warmup_db()
 
-MAINTENANCE_COOKIE = "preview_ok"
-
 def _has_preview_cookie():
     return request.cookies.get(MAINTENANCE_COOKIE) == os.getenv("PREVIEW_TOKEN", "")
+
+
+
+def beautify_name(name: str) -> str:
+    """Normaliza acentos (NFC), espaçamentos e capitaliza iniciais em PT-BR."""
+    if not name:
+        return "Jogador"
+    s = unicodedata.normalize("NFC", name).strip()
+    s = re.sub(r"\s+", " ", s)
+    parts = s.split(" ")
+    out = []
+    for i, p in enumerate(parts):
+        w = p.lower()
+        if i > 0 and w in LOWER_WORDS_PT:
+            out.append(w)
+        else:
+            out.append(w[:1].upper() + w[1:])
+    return " ".join(out)
+
+def unique_nickname_human(db, base_name: str) -> str:
+    """
+    Tenta manter o nome 'bonito' como nickname. Se já existir, anexa um número.
+    Ex.: 'Lucas Silva', 'Lucas Silva 2', 'Lucas Silva 3', ...
+    """
+    base = beautify_name(base_name)
+    if not db.get(User, base):
+        return base
+    i = 2
+    while True:
+        cand = f"{base} {i}"
+        if not db.get(User, cand):
+            return cand
+        i += 1
+
+def next_monday_midnight(dt: datetime | None = None) -> datetime:
+    now = dt or datetime.now(TZ)
+    days_ahead = (7 - now.weekday()) % 7
+    # se já é segunda depois da meia-noite, vai para a próxima segunda
+    if days_ahead == 0 and now.time() >= time(0, 0):
+        days_ahead = 7
+    target_date = (now + timedelta(days=days_ahead)).date()
+    return datetime.combine(target_date, time(0, 0), tzinfo=TZ)
+
+
+def _maybe_reset_week(db):
+    now = datetime.now(TZ)
+    iso_year, iso_week, _ = now.isocalendar()
+    cur = f"{iso_year}-W{iso_week:02d}"
+
+    meta = db.get(Meta, "last_reset_week")
+    if not meta or meta.value != cur:
+        # zera acumulado semanal; preserva best_score
+        db.execute(text("UPDATE leaderboard SET total_points = 0, games_played = 0"))
+        if meta:
+            meta.value = cur
+        else:
+            db.add(Meta(key="last_reset_week", value=cur))
+            
+
+def _ts(salt: str) -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt=salt)
+
+def make_email_token(user, salt: str):
+    return _ts(salt).dumps({"email": user.email})
+
+def load_email_token(token: str, salt: str, max_age: int = 3600):
+    return _ts(salt).loads(token, max_age=max_age)
+
+
+def _parse_sender(sender_str: str):
+    # aceita "Nome <email@dominio>" ou só "email@dominio"
+    name, email = None, None
+    if sender_str:
+        n, e = parseaddr(sender_str)
+        name = n or None
+        email = (e or sender_str).strip()
+    return name, email
+
+def send_email(subject: str, recipients: list[str], html: str, text: str = None) -> bool:
+    # 1) Preferir BREVO API (HTTPS) se houver chave
+    api_key = os.getenv("BREVO_API_KEY", "").strip()
+    if api_key:
+        try:
+            name, email = _parse_sender(os.getenv("MAIL_DEFAULT_SENDER", "") or os.getenv("MAIL_USERNAME", ""))
+            if not email:
+                raise RuntimeError("MAIL_DEFAULT_SENDER não configurado para API Brevo")
+            payload = {
+                "sender": {"email": email},
+                "to": [{"email": r} for r in recipients],
+                "subject": subject,
+                "htmlContent": html or "",
+                "textContent": text or (re.sub("<[^>]+>", "", html or "") if html else ""),
+            }
+            if name:
+                payload["sender"]["name"] = name
+
+            resp = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={
+                    "api-key": api_key,
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                },
+                json=payload,
+                timeout=8,
+            )
+            if 200 <= resp.status_code < 300:
+                return True
+            app.logger.error(f"[MAIL-BREVO] {resp.status_code} {resp.text}")
+        except Exception as e:
+            app.logger.error(f"[MAIL-BREVO] Falha: {e}")
+
+    # 2) Fallback: SMTP (Flask-Mail)
+    if mail and app.config.get("MAIL_SERVER"):
+        try:
+            msg = Message(
+                subject,
+                recipients=recipients,
+                html=html,
+                body=text or (re.sub("<[^>]+>", "", html or "") if html else ""),
+            )
+            sender_str = os.getenv("MAIL_DEFAULT_SENDER", "") or os.getenv("MAIL_USERNAME", "")
+            if sender_str:
+                msg.sender = sender_str
+            mail.send(msg)
+            return True
+        except Exception as e:
+            app.logger.error(f"[MAIL] Falha: {e}")
+
+    # 3) Dev: log
+    if app.debug:
+        app.logger.info(f"[MAIL-FAKE] To={recipients} | Subject={subject}\n{html}")
+        return True
+
+    return False
 
 @app.before_request
 def maintenance_gate():
@@ -158,20 +309,6 @@ def load_user(user_id: str):
     with db_readonly() as db:
         return db.get(User, user_id)
     
-
-# OAuth (Authlib)
-oauth = OAuth(app)
-
-# Google OpenID Connect (usa discovery)
-oauth.register(
-    name="google",
-    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_id=os.getenv("GOOGLE_CLIENT_ID"),
-    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-    client_kwargs={"scope": "openid email profile"},
-)
-
-THEMES = ["Esportes", "TV/Cinema", "Jogos", "Música", "Lógica", "História", "Diversos"]
 
 @app.get("/login")
 def login():
@@ -269,7 +406,7 @@ def register_post():
 @app.get("/auth/google")
 def auth_google():
     session["post_auth_next"] = request.args.get("next", "")
-    redirect_uri = url_for("auth_google_cb", _external=True, _scheme="https")
+    redirect_uri = url_for("auth_google_cb", _external=True, _scheme=os.getenv("PREFERRED_URL_SCHEME", "https"))
     resp = oauth.google.authorize_redirect(redirect_uri)
     try:
         app.logger.info("SESSION KEYS BEFORE REDIRECT: %s", list(session.keys()))
@@ -398,147 +535,6 @@ def do_logout():
         session.pop(k, None)
     flash("Você saiu da conta.", "ok")
     return redirect(url_for("login", notice="logout"))
-
-
-LOWER_WORDS_PT = {"de","da","do","das","dos","e"}
-
-def beautify_name(name: str) -> str:
-    """Normaliza acentos (NFC), espaçamentos e capitaliza iniciais em PT-BR."""
-    if not name:
-        return "Jogador"
-    s = unicodedata.normalize("NFC", name).strip()
-    s = re.sub(r"\s+", " ", s)
-    parts = s.split(" ")
-    out = []
-    for i, p in enumerate(parts):
-        w = p.lower()
-        if i > 0 and w in LOWER_WORDS_PT:
-            out.append(w)
-        else:
-            out.append(w[:1].upper() + w[1:])
-    return " ".join(out)
-
-def unique_nickname_human(db, base_name: str) -> str:
-    """
-    Tenta manter o nome 'bonito' como nickname. Se já existir, anexa um número.
-    Ex.: 'Lucas Silva', 'Lucas Silva 2', 'Lucas Silva 3', ...
-    """
-    base = beautify_name(base_name)
-    if not db.get(User, base):
-        return base
-    i = 2
-    while True:
-        cand = f"{base} {i}"
-        if not db.get(User, cand):
-            return cand
-        i += 1
-
-def next_monday_midnight(dt: datetime | None = None) -> datetime:
-    now = dt or datetime.now(TZ)
-    days_ahead = (7 - now.weekday()) % 7
-    # se já é segunda depois da meia-noite, vai para a próxima segunda
-    if days_ahead == 0 and now.time() >= time(0, 0):
-        days_ahead = 7
-    target_date = (now + timedelta(days=days_ahead)).date()
-    return datetime.combine(target_date, time(0, 0), tzinfo=TZ)
-
-
-def _maybe_reset_week(db):
-    now = datetime.now(TZ)
-    iso_year, iso_week, _ = now.isocalendar()
-    cur = f"{iso_year}-W{iso_week:02d}"
-
-    meta = db.get(Meta, "last_reset_week")
-    if not meta or meta.value != cur:
-        # zera acumulado semanal; preserva best_score
-        db.execute(text("UPDATE leaderboard SET total_points = 0, games_played = 0"))
-        if meta:
-            meta.value = cur
-        else:
-            db.add(Meta(key="last_reset_week", value=cur))
-            
-
-def _ts(salt: str) -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt=salt)
-
-def make_email_token(user, salt: str):
-    return _ts(salt).dumps({"email": user.email})
-
-def load_email_token(token: str, salt: str, max_age: int = 3600):
-    return _ts(salt).loads(token, max_age=max_age)
-
-def _html_to_text(html: str) -> str:
-    # fallback simples para gerar text/plain
-    text = re.sub(r"<br\s*/?>", "\n", html or "", flags=re.I)
-    text = re.sub(r"<[^>]+>", "", text)
-    return re.sub(r"\n{3,}", "\n\n", text).strip()
-
-def _parse_sender(sender_str: str):
-    # aceita "Nome <email@dominio>" ou só "email@dominio"
-    name, email = None, None
-    if sender_str:
-        n, e = parseaddr(sender_str)
-        name = n or None
-        email = (e or sender_str).strip()
-    return name, email
-
-def send_email(subject: str, recipients: list[str], html: str, text: str = None) -> bool:
-    # 1) Preferir BREVO API (HTTPS) se houver chave
-    api_key = os.getenv("BREVO_API_KEY", "").strip()
-    if api_key:
-        try:
-            name, email = _parse_sender(os.getenv("MAIL_DEFAULT_SENDER", "") or os.getenv("MAIL_USERNAME", ""))
-            if not email:
-                raise RuntimeError("MAIL_DEFAULT_SENDER não configurado para API Brevo")
-            payload = {
-                "sender": {"email": email},
-                "to": [{"email": r} for r in recipients],
-                "subject": subject,
-                "htmlContent": html or "",
-                "textContent": text or (re.sub("<[^>]+>", "", html or "") if html else ""),
-            }
-            if name:
-                payload["sender"]["name"] = name
-
-            resp = requests.post(
-                "https://api.brevo.com/v3/smtp/email",
-                headers={
-                    "api-key": api_key,
-                    "accept": "application/json",
-                    "content-type": "application/json",
-                },
-                json=payload,
-                timeout=8,
-            )
-            if 200 <= resp.status_code < 300:
-                return True
-            app.logger.error(f"[MAIL-BREVO] {resp.status_code} {resp.text}")
-        except Exception as e:
-            app.logger.error(f"[MAIL-BREVO] Falha: {e}")
-
-    # 2) Fallback: SMTP (Flask-Mail)
-    if mail and app.config.get("MAIL_SERVER"):
-        try:
-            msg = Message(
-                subject,
-                recipients=recipients,
-                html=html,
-                body=text or (re.sub("<[^>]+>", "", html or "") if html else ""),
-            )
-            sender_str = os.getenv("MAIL_DEFAULT_SENDER", "") or os.getenv("MAIL_USERNAME", "")
-            if sender_str:
-                msg.sender = sender_str
-            mail.send(msg)
-            return True
-        except Exception as e:
-            app.logger.error(f"[MAIL] Falha: {e}")
-
-    # 3) Dev: log
-    if app.debug:
-        app.logger.info(f"[MAIL-FAKE] To={recipients} | Subject={subject}\n{html}")
-        return True
-
-    return False
 
 
 @contextmanager

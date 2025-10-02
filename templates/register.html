@@ -11,6 +11,7 @@
     data-turbo="false"
   >
     <input
+      class="login-input"
       type="text"
       name="nickname"
       placeholder="Nickname"
@@ -22,6 +23,7 @@
     {% endif %}
 
     <input
+      class="login-input"
       type="email"
       name="email"
       placeholder="Email"
@@ -33,6 +35,7 @@
     {% endif %}
 
     <input
+      class="login-input"
       type="password"
       name="password"
       placeholder="Senha"
@@ -40,6 +43,7 @@
       minlength="6"
     />
     <input
+      class="login-input"
       type="password"
       name="confirmPassword"
       placeholder="Repetir senha"
@@ -52,7 +56,7 @@
     <p class="form-msg ok">{{ success }}</p>
     {% endif %}
 
-    <button class="button" style="margin-top: 20px">Criar conta</button>
+    <button class="primary-button" style="margin-top: 20px">Criar conta</button>
   </form>
 
   <p class="muted" style="margin-top: 10px">

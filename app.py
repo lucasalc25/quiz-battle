@@ -251,7 +251,9 @@ def maintenance_gate():
         return
 
     # caso contrário: mostra manutenção
-    return render_template("maintenance.html"), 503
+    return render_template("maintenance.html",
+                           title="Em atualização",
+                           body_class="maintenance"), 503
 
 @app.get("/__preview_on")
 def __preview_on():

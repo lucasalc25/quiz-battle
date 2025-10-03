@@ -6,7 +6,7 @@ import re
 import json
 import requests
 import threading
-from flask import Flask, current_app, render_template, request, redirect, url_for, session, jsonify, make_response, flash, copy_current_request_context
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response, flash, copy_current_request_context
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
 from email.utils import parseaddr
@@ -20,7 +20,6 @@ from models import Meta
 from zoneinfo import ZoneInfo
 from datetime import datetime, time, timedelta
 from dotenv import load_dotenv
-import time
 
 
 load_dotenv() 
@@ -711,7 +710,7 @@ def game():
             score = len(asked_ids)
             session.pop("feedback_state", None)
             return render_template(
-                "game.html",
+                "quizzes.html",
                 q=q,
                 theme=theme,
                 score=score,

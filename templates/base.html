@@ -6,7 +6,12 @@
     <meta name="turbo-cache-control" content="no-preview" />
 
     <title>{{ title or "Quiz Battle" }}</title>
-    <link rel="stylesheet" href="../static/styles.css" />
+    <link rel="stylesheet" href="../static/base.css" />
+    <link rel="stylesheet" href="../static/login.css" />
+    <link rel="stylesheet" href="../static/home.css" />
+    <link rel="stylesheet" href="../static/game.css" />
+    <link rel="stylesheet" href="../static/leaderboard.css" />
+
     <link
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
       rel="stylesheet"
@@ -124,19 +129,25 @@
         <div class="logo-wrap">
           <a href="/"
             ><img
-              src="../static/images/logo-quinity.png"
+              src="../static/images/logo-quizzy2.png"
               width="120px"
               alt="Logo Quiz"
           /></a>
         </div>
 
         <div class="search-area">
-          <form action="{{ url_for('home') }}" method="get" class="search-bar">
+          <form
+            action="{{ url_for('home') }}"
+            method="get"
+            data-group="search-bar"
+            class="search-bar"
+          >
             <i data-lucide="search"></i>
             <input
               type="text"
               name="q"
-              placeholder="Buscar quiz, membro, "
+              data-target="search-bar"
+              placeholder="Buscar quizzes, membros ou tópicos"
               value="{{ request.args.get('q','') if request else '' }}"
               autocomplete="off"
             />
@@ -204,14 +215,22 @@
           <i data-lucide="menu"></i>
         </button>
 
-        <!-- Avatar -->
         {% if current_user.is_authenticated %}
-        <a href="{{ url_for('home') }}" class="user-badge">
+        <button
+          id="userMenuBtn"
+          class="user-badge"
+          type="button"
+          aria-haspopup="true"
+          aria-expanded="false"
+          title="Abrir menu de usuário"
+          style="margin-left: 6px"
+        >
           {% if current_user.avatar_url %}
           <img
             src="{{ current_user.avatar_url }}"
             alt="{{ current_user.nickname or current_user.email }}"
             referrerpolicy="no-referrer"
+            style="pointer-events: none"
           />
           {% else %}
           <div class="user-placeholder">
@@ -219,7 +238,7 @@
           </div>
           {% endif %}
           <i class="user-caret" data-lucide="chevron-down"></i>
-        </a>
+        </button>
         {% endif %}
       </div>
     </header>
@@ -234,7 +253,7 @@
         <input
           type="text"
           name="q"
-          placeholder="Buscar quizzes, temas, criadores…"
+          placeholder="Buscar quizzes, membros ou tópicos"
           value="{{ request.args.get('q','') if request else '' }}"
           autocomplete="off"
         />
@@ -265,6 +284,77 @@
       <button id="muteMenuBtn" class="menu-item" data-action="audio">
         <i data-lucide="volume-x"></i>
       </button>
+    </div>
+
+    <!-------- USER MENU (dropdown) -------->
+    <div id="userMenu" class="user-menu" aria-hidden="true">
+      <!-- Header do menu -->
+      <div class="user-menu-head">
+        <div class="user-menu-avatar">
+          {% if current_user.avatar_url %}
+          <img
+            src="{{ current_user.avatar_url }}"
+            alt="Foto de perfil"
+            referrerpolicy="no-referrer"
+          />
+          {% else %}
+          <div class="user-placeholder sm">
+            {{ (current_user.nickname or current_user.email or '?')[0]|upper }}
+          </div>
+          {% endif %}
+
+          <!-- Botão/atalho para editar foto (ajuste a rota) -->
+          <a href="{{ url_for('home') }}#editar-foto" class="edit-photo-btn">
+            <i data-lucide="camera" style="width: 16px; height: 16px"></i>
+          </a>
+        </div>
+
+        <div
+          class="user-menu-greet"
+          style="display: flex; align-items: center; justify-content: center"
+        >
+          <p class="hello">
+            Olá,
+            <a href="#" class="user-name-link">
+              {{ current_user.nickname or current_user.email }}
+            </a>
+            👋
+          </p>
+        </div>
+      </div>
+
+      <!-- Lista de opções -->
+      <nav class="user-menu-list">
+        <a class="menu-item" href="{{ url_for('home') }}#perfil"
+          ><i data-lucide="user"></i><span>Meu perfil</span></a
+        >
+        <a class="menu-item" href="{{ url_for('home') }}#pontuacoes"
+          ><i data-lucide="target"></i><span>Minhas pontuações</span></a
+        >
+        <a class="menu-item" href="{{ url_for('home') }}#favoritos"
+          ><i data-lucide="star"></i><span>Meus favoritos</span></a
+        >
+        <a class="menu-item" href="{{ url_for('home') }}#notificacoes"
+          ><i data-lucide="bell"></i><span>Notificações</span></a
+        >
+        <a class="menu-item" href="{{ url_for('home') }}#mensagens"
+          ><i data-lucide="message-circle"></i><span>Mensagens</span></a
+        >
+        <a class="menu-item" href="{{ url_for('home') }}#config"
+          ><i data-lucide="settings"></i><span>Configurações</span></a
+        >
+        <hr />
+        <!-- Sair (POST) -->
+        <form
+          method="post"
+          action="{{ url_for('do_logout') }}"
+          data-turbo="false"
+        >
+          <button type="submit" class="menu-item danger">
+            <i data-lucide="log-out"></i><span>Sair</span>
+          </button>
+        </form>
+      </nav>
     </div>
 
     <script>
@@ -337,20 +427,38 @@
           const themeBtn = document.getElementById("themeBtn");
           const audioBtn = document.getElementById("muteBtn");
 
+          function paintIcons() {
+            if (window.lucide)
+              try {
+                lucide.createIcons();
+              } catch (_) {}
+          }
+
+          // === NOVO: ícone do hambúrguer ===
+          function setHamburger(open) {
+            btn.innerHTML = open
+              ? '<i data-lucide="x"></i>'
+              : '<i data-lucide="menu"></i>';
+            paintIcons();
+          }
+
           function openMenu() {
             menu.classList.add("open");
             menu.setAttribute("aria-hidden", "false");
+            setHamburger(true);
+            if (window.__syncThemeIcon) window.__syncThemeIcon();
+            if (window.__syncAudioIcon) window.__syncAudioIcon();
           }
           function closeMenu() {
             menu.classList.remove("open");
             menu.setAttribute("aria-hidden", "true");
+            setHamburger(false);
           }
           function toggleMenu(e) {
-            e && e.preventDefault();
+            e.preventDefault();
             menu.classList.contains("open") ? closeMenu() : openMenu();
           }
 
-          // toggle
           if (!btn.dataset.bound) {
             btn.addEventListener("click", toggleMenu);
             btn.dataset.bound = "1";
@@ -374,17 +482,9 @@
             });
           });
 
-          // ESC fecha / navegação fecha
-          document.addEventListener("keydown", (e) => {
-            if (e.key === "Escape") closeMenu();
-          });
           document.addEventListener("turbo:before-visit", closeMenu);
 
-          // lucide icons
-          if (window.lucide)
-            try {
-              lucide.createIcons();
-            } catch (_) {}
+          paintIcons();
         }
 
         document.addEventListener("turbo:load", bindMobileMenu);
@@ -666,43 +766,97 @@
         }
       })();
 
-      // ----------- CONTROLE DE TEMAS ----------------
       (function () {
-        const KEY = "theme";
-        const btn = document.getElementById("themeBtn");
+        const btn = document.getElementById("userMenuBtn");
+        const menu = document.getElementById("userMenu");
+        const header = document.querySelector("#header");
 
-        function getTheme() {
-          return localStorage.getItem(KEY) || "dark"; // seu padrão
-        }
-        function setTheme(t) {
-          document.documentElement.dataset.theme = t; // adapte se usa outra mecânica
-          localStorage.setItem(KEY, t);
+        menu.style.top = header.offsetHeight + "px";
 
-          // troca de ícone ao estilo do botão de áudio
-          if (!btn) return;
-          if (window.lucide) {
-            btn.innerHTML =
-              t === "dark"
-                ? '<i data-lucide="sun"></i>'
-                : '<i data-lucide="moon"></i>';
+        if (!btn || !menu) return;
+
+        function paintIcons() {
+          if (window.lucide)
             try {
               lucide.createIcons();
             } catch (_) {}
-          } else {
-            btn.textContent = t === "dark" ? "🌙" : "☀️";
-          }
-        }
-        function toggleTheme() {
-          setTheme(getTheme() === "dark" ? "light" : "dark");
         }
 
-        document.addEventListener("turbo:load", () => {
-          setTheme(getTheme()); // pinta o ícone correto ao carregar
-          if (btn && !btn.dataset.bound) {
-            btn.addEventListener("click", toggleTheme);
-            btn.dataset.bound = "1";
-          }
+        function setArrow(open) {
+          btn.innerHTML = open
+            ? `{% if current_user.avatar_url %}
+          <img
+            src="{{ current_user.avatar_url }}"
+            alt="{{ current_user.nickname or current_user.email }}"
+            referrerpolicy="no-referrer"
+            style="pointer-events: none"
+          />
+          {% else %}
+          <div class="user-placeholder">
+            {{ (current_user.nickname or current_user.email or '?')[0]|upper }}
+          </div>
+          {% endif %}
+          <i class="user-caret" data-lucide="chevron-up"></i>`
+            : `{% if current_user.avatar_url %}
+          <img
+            src="{{ current_user.avatar_url }}"
+            alt="{{ current_user.nickname or current_user.email }}"
+            referrerpolicy="no-referrer"
+            style="pointer-events: none"
+          />
+          {% else %}
+          <div class="user-placeholder">
+            {{ (current_user.nickname or current_user.email or '?')[0]|upper }}
+          </div>
+          {% endif %}
+          <i class="user-caret" data-lucide="chevron-down"></i>`;
+          paintIcons();
+        }
+
+        function openMenu() {
+          menu.classList.add("open");
+          menu.setAttribute("aria-hidden", "false");
+          btn.setAttribute("aria-expanded", "true");
+          setArrow(true);
+        }
+        function closeMenu() {
+          menu.classList.remove("open");
+          menu.setAttribute("aria-hidden", "true");
+          btn.setAttribute("aria-expanded", "false");
+          setArrow(false);
+        }
+        function toggleMenu(e) {
+          e && e.preventDefault();
+          menu.classList.contains("open") ? closeMenu() : openMenu();
+        }
+
+        if (!btn.dataset.bound) {
+          btn.addEventListener("click", toggleMenu);
+          btn.dataset.bound = "1";
+        }
+
+        // Fechar com clique fora
+        document.addEventListener("click", (e) => {
+          if (!menu.classList.contains("open")) return;
+          const hitBtn = btn.contains(e.target);
+          const hitMenu = menu.contains(e.target);
+          if (!hitBtn && !hitMenu) closeMenu();
         });
+
+        // Fechar com ESC e ao navegar
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") closeMenu();
+        });
+        document.addEventListener("turbo:before-visit", closeMenu);
+
+        // Re-render dos ícones ao carregar
+        document.addEventListener("turbo:load", paintIcons);
+        if (
+          document.readyState === "complete" ||
+          document.readyState === "interactive"
+        ) {
+          setTimeout(paintIcons, 0);
+        }
       })();
     </script>
     {% endif %}

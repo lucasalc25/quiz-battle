@@ -1,0 +1,8 @@
+@media (max-width: 560px) {
+  body.rank .container {
+    padding-inline: 0;
+  }
+  body.rank {
+    height: 100vh;
+  }
+}

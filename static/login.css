@@ -1,0 +1,56 @@
+.form-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(70vw, 260px);
+}
+
+.login-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  background: var(--container);
+  color: var(--text);
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.login-link {
+  text-decoration-line: underline;
+  text-underline-offset: 1px;
+}
+
+.login-link:hover {
+  color: var(--primary);
+}
+
+.auth-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-button {
+  background: var(--container);
+  color: var(--text);
+  transition: all 0.2s ease-in-out;
+  flex: 1;
+  text-align: center;
+  padding: 10px 15px;
+  border-radius: 8px;
+  border: 1px solid var(--text);
+  cursor: pointer;
+  font-size: 1rem;
+  text-decoration: none;
+  display: flex;
+  justify-content: center;
+}
+
+.auth-button:hover {
+  transform: scale(1.02);
+}
+
+.auth-icon {
+  margin-right: 10px;
+}

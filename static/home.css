@@ -1,0 +1,67 @@
+body.home main.container {
+  padding-bottom: 40px;
+  text-align: center;
+  box-shadow: 0 0 15px var(--shadow);
+}
+
+body.home .container form label {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.update-banner {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  border-bottom: 1px solid var(--border, #1f2937);
+  backdrop-filter: blur(6px);
+}
+
+.update-banner .ub-inner {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+.update-banner .button.sm {
+  font-size: 0.85rem;
+  padding: 6px 10px;
+}
+
+#wnVersion {
+  margin: 10px auto 0;
+}
+
+.wn-list {
+  padding-left: 18px;
+}
+
+.wn-list:first-child {
+  margin: 20px 0;
+  font-size: 1.1rem;
+}
+.wn-list li {
+  margin: 25px 0;
+  font-size: 1.1rem;
+}
+
+@media (min-width: 560px) {
+  .wn-list li:first-child {
+    margin: 20px 0 25px;
+    font-size: 1.1rem;
+  }
+  .wn-list li {
+    margin: 25px 0;
+    font-size: 1.1rem;
+  }
+}
+
+body.home .container h1 {
+  margin: 0.25rem 0 1rem;
+  text-align: center;
+}

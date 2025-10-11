@@ -1,5 +1,4 @@
 <div align="center">
-  <img src="static/images/logo-quinity.png" alt="Quiz Battle" width="120">
   <h1>Quiz Battle 🎯</h1>
   <p>Aplicação web interativa de quizzes, desenvolvida em <b>Flask</b> com <b>HTML</b>, <b>CSS</b> e <b>JavaScript</b>, focada em autenticação, ranking e gamificação.</p>
 </div>

@@ -19,7 +19,6 @@ Ele combina recursos de **login tradicional e social (Google)**, **envio automat
 - ✉️ **Envio de e-mails automáticos** (registro e redefinição de senha)  
 - 🏆 **Ranking semanal** com reset automático toda segunda-feira  
 - 👤 **Avatar e perfil básico** (imagem do Google se disponível)  
-- 📅 **Check-in diário (streaks)** e sistema de pontuação cumulativa  
 - 🌗 **Tema claro/escuro** e 🎵 **áudio ambiente controlável**  
 - ⚙️ **Painel seguro de redefinição de senha com token assinado**
 
@@ -60,7 +59,6 @@ A aplicação segue uma estrutura clara e modular:
 ## 💡 Destaques Técnicos
 
 - Sistema de ranking com cálculo automático da **próxima segunda-feira à meia-noite**  
-- Implementação de **check-in diário** com streaks persistentes  
 - **Fallback inteligente** de envio de e-mails: Brevo API → SMTP → Log  
 - Layout base com **header dinâmico** e controle de tema/áudio persistente  
 - Preparado para deploy em **Railway**, com variáveis seguras de ambiente  
